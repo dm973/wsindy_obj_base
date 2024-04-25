@@ -468,6 +468,9 @@ classdef WS_opt < handle
             
             Ginv = pinv(G_0(:,WS.weights~=0));
             if ~isempty(WS.cov)
+                if ~exist('RT','var')
+                    RT = chol(WS.cov)';
+                end
                 Ginv = Ginv*RT;
             end
             CovW = Ginv*Ginv';
