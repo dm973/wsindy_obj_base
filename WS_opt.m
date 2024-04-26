@@ -196,7 +196,7 @@ classdef WS_opt < handle
 
             GW_ls = cellfun(@(g,w) norm(g*w), G,W_ls, 'uni',0);            
 
-            if reg0>0 % initial guess: truncated Least-squares
+            if isnumeric(reg0) & reg0>0 % initial guess: truncated Least-squares
                 reg_inds = cellfun(@(g,b) abs(b'*g)./vecnorm(g)/norm(b),G,b,'uni',0);
                 for i=1:length(G)
                     [~,reg_inds{i}] = sort(reg_inds{i},'descend');
@@ -204,6 +204,8 @@ classdef WS_opt < handle
 %                     disp(['log10(cond(G(reg0)))=',num2str(log10(cond(G{i}(:,reg_inds{i}))))])
 %                     disp(['initial coeff. magnitude range (log10 scale)=',num2str(range(log10(abs(G{i}(:,reg_inds{i}) \ b{i}))))])
                 end
+            elseif isequal(reg0,'coltrim')
+                reg_inds = repmat({'coltrim'},1,length(G));
             else
                 reg_inds = repmat({[]},1,length(G));
             end
