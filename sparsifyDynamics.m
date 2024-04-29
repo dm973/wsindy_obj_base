@@ -20,7 +20,7 @@ if ~isempty(reg_inds) % initial guess: truncated Least-squares
         [~,reg_inds] = sort(reg_inds,'descend');
         reg_inds = reg_inds(1:min(reg0,end));
     elseif isequal(reg_inds,'coltrim')
-        reg_inds = coltrim(Theta,lambda,dXdt);
+        reg_inds = coltrim(Theta,1-lambda,dXdt);
     end
     Xi = zeros(size(Theta,2),1);
     Xi(reg_inds) = Theta(:,reg_inds) \ dXdt;
@@ -40,8 +40,9 @@ if ~isempty(M)
         LBs = lambda*bnds;
         UBs = 1/lambda*bnds;
     elseif toggle_jointthresh == 3
-        bnds=norm(dXdt)^2./abs(dXdt'*Theta)'.*M;
-        UBs = 1/lambda*bnds;
+        bnds =norm(dXdt)^2./abs(dXdt'*Theta)'.*M;
+        bnds2 = norm(dXdt)./vecnorm(Theta)'.*M;
+        UBs = 1/lambda*bnds2;
         LBs = lambda*bnds;
     else
         bnds = norm(dXdt)./vecnorm(Theta)'.*M;
