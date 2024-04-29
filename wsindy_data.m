@@ -264,6 +264,7 @@ classdef wsindy_data < handle
             p = inputParser;
             addParameter(p,'ord',default_ord);
             addParameter(p,'alg','AWGN');
+            addParameter(p,'set',false);
             parse(p,varargin{:})
 
             ord = p.Results.ord;
@@ -284,6 +285,10 @@ classdef wsindy_data < handle
                     sig = num2cell(sig);
                 end
 
+            end
+
+            if p.Results.set
+                obj.sigmas = sig;
             end
 
         end
