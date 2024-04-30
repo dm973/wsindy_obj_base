@@ -444,7 +444,6 @@ classdef WS_opt < handle
             WS.cat_Gb('cat','blkdiag');
             G_0 = WS.G{1};
             b_0 = WS.b{1};
-
             while and(check,its<maxits)
                 % disp(['iter=',num2str(its)])
                 if isequal(regmeth,'ols')
@@ -701,7 +700,7 @@ classdef WS_opt < handle
             elseif isequal(class(WS),'cell')
                 WS = wtemp(:)';
             end
-
+            semilogx(lambdas,lossvals)
         end
 
         function [WS,its] = sparsifyDynamics_wendy(obj,WS,lambda,M,bnds,maxits,vw)

@@ -236,8 +236,8 @@ classdef wsindy_model < handle
                     RT = chol( (1-diag_reg)*obj.cov + diag_reg*speye(size(obj.cov,1)) )';
                     check = 1;
                 catch
-                    disp(['increasing Cov regularization'])
                     diag_reg = diag_reg*10;
+                    fprintf('\nincreasing Cov regularization to %0.2e\n',diag_reg)
                 end
             end
 
