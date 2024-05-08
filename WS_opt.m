@@ -29,6 +29,10 @@ classdef WS_opt < handle
             parse(p,varargin{:})
             S = p.Results.S;
             linregargs = p.Results.linregargs;
+            ii = cellfun(@(a)isequal(a,'S'),linregargs);
+            if any(ii)
+                S = linregargs{find(ii)+1};
+            end
             if isempty(S)
                 S = cellfun(@(g)true(size(g,2),1),WS.G,'uni',0);
             elseif and(isequal(S,0),~isempty(WS.weights))
@@ -720,13 +724,13 @@ classdef WS_opt < handle
                     WS.add_weights(w);
                     if any(w)
                         [WS,~,~,~,C] = obj.wendy(WS,vw{:});
-                        % w = WS.weights;
-                        % inds = find(w);
-                        % if ~isempty(inds)
-                        %     I = abs(w(inds)) < sqrt(diag(C))/4;
-                        %     w(inds(I)) = 0;
-                        %     WS.add_weights(w);
-                        % end
+                        w = WS.weights;
+                        inds = find(w);
+                        if ~isempty(inds)
+                            I = abs(w(inds)) < sqrt(diag(C))/inf;
+                            w(inds(I)) = 0;
+                            WS.add_weights(w);
+                        end
                     end
                 end
             end
