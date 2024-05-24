@@ -263,7 +263,7 @@ classdef diffOp < linearOp
             end
             if all(dat.isUniform)
 
-                p_loc = 4; % must be even
+                p_loc = 6; % must be even
                 [Dmats_fd,c_fd] = obj.fdMats(dat,p_loc);
                 Dmats = cell(dat.ndims,1);
                 dat.getcorners;
