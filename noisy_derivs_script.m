@@ -1,29 +1,25 @@
 %% choose spatial grid
-M = 500; % number of observed data points
-x = linspace(0,2*pi,M);
+M = 1000; % number of observed data points
+x = linspace(0,2.5*pi,M);
 
 %% choose function to differentiate
-k = 6; % number of sine features
-max_freq = 20;ceil(1/24*M/2); % maximum mode as fraction of nyquist 
+k = 5; % number of sine features
+max_freq = max(k,ceil(1/32*M/2)); % maximum mode as fraction of nyquist 
 c = randn(1,k); % random sine coefficients
 fq = randperm(max_freq,k); 
 f = @(t) sinpolyval(c,fq,t);
 fp = @(t) cospolyval(fq.*c,fq,t);
 
 %% add noise
-sig = 0.1; % noise level
+sig = 0.05; % noise level
 Y_cl = f(x');
 Y = Y_cl+std(Y_cl)*sig*randn(size(Y_cl));
 Yp = fp(x');
 U = wsindy_data(Y,x);
 
 figure(10)
-subplot(2,1,1)
 plot(x,f(x),'-',x,Y,'ro')
 legend({'true fcn','data'})
-subplot(2,1,2)
-plot(x,fp(x),'o-')
-legend('derivative')
 
 %% toggle methods to display
 
@@ -50,7 +46,7 @@ end
 %% glob proj
 if toggle_gb==1
     tic;
-    gb_ord = ceil(1/4*M/2); %%% set to M/2, trig basis to Fourier differentiate
+    gb_ord = ceil(1/4*M/2); %%% set to M/2 + trig basis to Fourier differentiation
     [Globalderiv,Proj_mat,Phi_mat] = get_glob(gb_ord,x,'basis','trig');
     Y_glob = Proj_mat*Y; %%% can also just use as a smoother
     Yp_glob = Globalderiv*Y;
@@ -116,6 +112,15 @@ timez = {fd_time,glob_time,ploc_time,gp_time,wf_time};
 errz = num2cell([vecnorm(Yp - [Yp_fd Yp_glob Ylp_loc Yp_gp Yp_wf])]/norm(Yp));
 fprintf('runtimes:\n (FD) %.2e;\n (GB) %.2e;\n (LB) %.2e;\n (GP) %.2e;\n (WF) %.2e;\n',timez{:})
 fprintf('errors:\n (FD) %.2e;\n (GB) %.2e;\n (LB) %.2e;\n (GP) %.2e;\n (WF) %.2e;\n',errz{:})
+figure(7);clf
+plot(x,Yp_fd,'r','linewidth',1);hold on
+plot(x,Yp_glob,'y','linewidth',3)
+plot(x,Ylp_loc,'g','linewidth',3)
+plot(x,Yp_gp,'linewidth',3)
+plot(x,Yp_wf,'c-.','linewidth',3)
+plot(x,Yp,'k--','linewidth',3)
+hold off
+legend({'FD','GB','LP','GP','WF','true'})
 
 %% functions
 
