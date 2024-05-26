@@ -16,6 +16,7 @@ classdef wsindy_data < handle
         ks
         dv
         sigmas
+        scales
     end
 
     methods
@@ -61,6 +62,7 @@ classdef wsindy_data < handle
             if isempty(obj.sigmas)
                 obj.sigmas = cell(obj.nstates,1);
             end
+            obj.scales=[];
 
         end
 
@@ -396,6 +398,12 @@ classdef wsindy_data < handle
                     obj.ks(j,i) = getcorner(Ufft,xx,tplot);
                 end
             end        
+        end
+
+        function obj = set_scales(obj,scales)
+            obj.Uobs = arrayfun(@(i)obj.Uobs{i}/scales(i),1:obj.nstates,'un',0);
+            obj.grid = arrayfun(@(i)obj.grid{i}/scales(obj.nstates+i),1:obj.ndims,'un',0);
+            obj.scales = scales;
         end
 
     end

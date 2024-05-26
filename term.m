@@ -334,6 +334,20 @@ classdef term < absterm
             end
         end
 
+        function m = get_scale(obj,scales)
+            m = 1;
+            if isequal(class(obj.ftag),'double')
+                if all(isreal(obj.ftag))
+                    m=m*prod(scales(1:obj.nstates).^obj.ftag);
+                end
+            end
+            if ~isempty(obj.linOp)
+                if isequal(class(obj.linOp),'diffOp')
+                    m=m/prod(scales(obj.nstates+1:end).^obj.linOp.difftags);
+                end
+            end
+        end
+
 
     end
 

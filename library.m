@@ -200,6 +200,9 @@ classdef library < handle
             obj.tags = obj.tags(setdiff(1:J,rm_inds)); 
         end
 
+        function Mscales = get_scales(obj,scales)
+            Mscales = cellfun(@(t)t.get_scale(scales),obj.terms);
+        end
     end
 
 end
