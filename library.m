@@ -201,7 +201,7 @@ classdef library < handle
         end
 
         function Mscales = get_scales(obj,scales)
-            Mscales = cellfun(@(t)t.get_scale(scales),obj.terms);
+            Mscales = cellfun(@(t)t.get_scale(scales),obj.terms(:));
         end
     end
 
