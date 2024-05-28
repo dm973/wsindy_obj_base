@@ -401,7 +401,7 @@ classdef WS_opt < handle
             % options: maxits,ittol,diag_reg,w,regmeth
 
             default_maxits = 20;
-            default_ittol = 10^-6;
+            default_ittol = 10^-4;
             default_diag_reg = 10^-6;
             default_w = WS.weights;
             default_regmeth = 'ols';

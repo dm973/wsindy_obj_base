@@ -71,10 +71,11 @@ classdef wsindy_data < handle
     methods
 
         function obj = coarsen(obj,s,d)
+
             if ~exist('d','var')
                 if length(s)==1
                     d=1:obj.ndims;
-                    s=s + d*0;
+                    s = s + d*0;
                 else
                     d=1:length(s);
                 end
@@ -83,7 +84,12 @@ classdef wsindy_data < handle
             end
 
             for i=1:length(s)
-                obj = coarsen_dim(obj,s(i),d(i));
+                if s(i)>0
+                    obj = coarsen_dim(obj,s(i),d(i));
+                else
+                    s_temp = max(floor(obj.dims(i)/(-s(i))),1);
+                    obj = coarsen_dim(obj,s_temp,d(i));
+                end
             end
             obj = obj.get_dims;
         end
@@ -401,6 +407,12 @@ classdef wsindy_data < handle
         end
 
         function obj = set_scales(obj,scales)
+            if isempty(scales)
+                scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
+                scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+                scales(obj.nstates+1:end) = cellfun(@(x)mean(abs(x(:))),obj.grid);
+            end
+
             obj.Uobs = arrayfun(@(i)obj.Uobs{i}/scales(i),1:obj.nstates,'un',0);
             obj.grid = arrayfun(@(i)obj.grid{i}/scales(obj.nstates+i),1:obj.ndims,'un',0);
             obj.scales = scales;
