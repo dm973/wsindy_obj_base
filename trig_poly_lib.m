@@ -13,12 +13,14 @@ function [lib,true_S] = trig_poly_lib(polys,trigs,x_diffs,nstates,ndims,numeq,tr
         for j=1:length(tags)
             if ~and(sum(diff_tags(i,:))>0,isequal(tags{j},zeros(1,nstates)))
                 lib.add_terms(term('ftag',tags{j},'linOp',diff_tags(i,:)));
+
+                %%% get true weights if specified
                 if exist('true_nz_weights','var')
                     if ~isempty(true_nz_weights)
-                        S = cell2mat(cellfun(@(tnz) ismember(tnz(:,1:end-1),[tags{j} diff_tags(i,:)],'rows'), true_nz_weights, 'Un',0));
-                        for jj=1:size(S,2)
-                            if any(S(:,jj))
-                                true_S{jj} = [true_S{jj};[length(lib.terms) true_nz_weights{jj}(S(:,jj),end)]];
+                        S = cellfun(@(tnz) ismember(tnz(:,1:end-1),[tags{j} diff_tags(i,:)],'rows'), true_nz_weights(:), 'Un',0);
+                        for jj=1:length(S)
+                            if any(S{jj})
+                                true_S{jj} = [true_S{jj};[length(lib.terms) true_nz_weights{jj}(S{jj},end)]];
                             end
                         end
                     end

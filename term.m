@@ -37,7 +37,11 @@ classdef term < absterm
 
             if ~isempty(obj.linOp)
                 if isequal(class(obj.linOp),'double')
-                    obj.linOp = diffOp(obj.linOp,'nstates',obj.nstates);
+                    if ~isequal(obj.linOp,0)
+                        obj.linOp = diffOp(obj.linOp,'nstates',obj.nstates);
+                    else
+                        obj.linOp = [];
+                    end
                 end
             end
 

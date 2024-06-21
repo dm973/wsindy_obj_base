@@ -407,14 +407,22 @@ classdef wsindy_data < handle
         end
 
         function obj = set_scales(obj,scales)
-            if isempty(scales)
-                scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
-                scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
-                scales(obj.nstates+1:end) = cellfun(@(x)mean(abs(x(:))),obj.grid);
+            if ~isequal(length(scales),obj.nstates+obj.ndims)
+                if isempty(scales)
+                    scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
+                    scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+                    scales(obj.nstates+1:end) = cellfun(@(x)mean(abs(x(:))),obj.grid);
+                elseif isequal(scales,1)
+                    scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
+                elseif isequal(scales,'Ubar')
+                    scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
+                    scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+                end
             end
 
             obj.Uobs = arrayfun(@(i)obj.Uobs{i}/scales(i),1:obj.nstates,'un',0);
             obj.grid = arrayfun(@(i)obj.grid{i}/scales(obj.nstates+i),1:obj.ndims,'un',0);
+            obj.dv = obj.dv(:)'/scales(obj.nstates+1:end);
             obj.scales = scales;
         end
 
