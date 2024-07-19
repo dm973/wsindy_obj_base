@@ -147,7 +147,8 @@ classdef term < absterm
                 Xc = sym2cell(X);
                 for j=1:obj.nstates
                     g = diff(obj.fHandle(Xc{:}),X(j),1);
-                    if all(arrayfun(@(i)diff(g,X(i),1)==0,1:obj.nstates)) %g==0
+                    % if all(arrayfun(@(i)diff(g,X(i),1)==0,1:obj.nstates)) %g==0
+                    if isSymType(g,'number') %g==constant
                         xstr=reshape(strcat(',x',num2str((1:obj.nstates)'))',[],1)';
                         obj.gradterms(j) = term('fHandle',eval(['@(',xstr(2:end),')x1*0+double(g)']),'gradon',0,'nstates',obj.nstates,'linOp',obj.linOp);
                     else
