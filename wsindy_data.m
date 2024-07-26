@@ -62,7 +62,7 @@ classdef wsindy_data < handle
             if isempty(obj.sigmas)
                 obj.sigmas = cell(obj.nstates,1);
             end
-            obj.scales=[];
+            obj.set_scales(1);
 
         end
 

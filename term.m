@@ -246,75 +246,81 @@ classdef term < absterm
                     expr = [expr,','];
                 end
             end
-
-            if and(all(real(obj.ftag)==imag(obj.ftag)),any(obj.ftag))
-                str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],1:obj.nstates,'uni',0);
-                for j=1:obj.nstates
-                    if ~(str{j}(1)=='-')
-                        str{j}=['+',str{j}];
-                    end
-                end
-                str = strcat(str{:});
-                obj.fHandle = eval(['@(',expr,')',num2str(obj.coeff),'*','cos(',str,')']);
-            elseif and(all(real(obj.ftag)==-imag(obj.ftag)),any(obj.ftag))
-                str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],1:obj.nstates,'uni',0);
-                for j=1:obj.nstates
-                    if ~(str{j}(1)=='-')
-                        str{j}=['+',str{j}];
-                    end
-                end
-                str = strcat(str{:});
-                obj.fHandle = eval(['@(',expr,')',num2str(obj.coeff),'*','sin(',str,')']);
+            
+            if isequal(obj.ftag,zeros(1,obj.nstates))
+                obj.fHandle = eval(['@(',expr,')0*',vars{1}]);
             else
-                inds_cos = all([real(obj.ftag)==imag(obj.ftag);obj.ftag~=0],1);
-                inds_sin = all([real(obj.ftag)==-imag(obj.ftag);obj.ftag~=0],1);
-                inds_other = find(all([~inds_cos;~inds_sin;obj.ftag~=0],1));
-
-                fUnits = arrayfun(@(k)unitfstr(obj,k),obj.ftag(inds_other),'uni',0);
-                fstr = [];
-                for i=1:length(fUnits)
-                    fstr = [fstr,strrep(fUnits{i},'x',vars{inds_other(i)})];
-                    if i<length(fUnits)
-                        fstr = [fstr,'.*'];
+                if and(all(real(obj.ftag)==imag(obj.ftag)),any(obj.ftag))
+                    str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],1:obj.nstates,'uni',0);
+                    for j=1:obj.nstates
+                        if ~(str{j}(1)=='-')
+                            str{j}=['+',str{j}];
+                        end
                     end
-                end
-                if ~isempty(fstr)
-                    str_fun= ['@(',expr,')',num2str(obj.coeff),'*',fstr];
+                    str = strcat(str{:});
+                    obj.fHandle = eval(['@(',expr,')',num2str(obj.coeff),'*','cos(',str,')']);
+                elseif and(all(real(obj.ftag)==-imag(obj.ftag)),any(obj.ftag))
+                    str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],1:obj.nstates,'uni',0);
+                    for j=1:obj.nstates
+                        if ~(str{j}(1)=='-')
+                            str{j}=['+',str{j}];
+                        end
+                    end
+                    str = strcat(str{:});
+                    obj.fHandle = eval(['@(',expr,')',num2str(obj.coeff),'*','sin(',str,')']);
                 else
-                    str_fun= ['@(',expr,')',num2str(obj.coeff)];
-                end
-                if length(find(inds_cos))>length(find(inds_sin))
-                    str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],find(inds_cos),'uni',0);
-                    for j=1:length(find(inds_cos))
-                        if ~(str{j}(1)=='-')
-                            str{j}=['+',str{j}];
+                    inds_cos = all([real(obj.ftag)==imag(obj.ftag);obj.ftag~=0],1);
+                    inds_sin = all([real(obj.ftag)==-imag(obj.ftag);obj.ftag~=0],1);
+                    inds_other = find(all([~inds_cos;~inds_sin;obj.ftag~=0],1));
+    
+                    fUnits = arrayfun(@(k)unitfstr(obj,k),obj.ftag(inds_other),'uni',0);
+                    fstr = [];
+                    for i=1:length(fUnits)
+                        fstr = [fstr,strrep(fUnits{i},'x',vars{inds_other(i)})];
+                        if i<length(fUnits)
+                            fstr = [fstr,'.*'];
                         end
                     end
-                    str = strcat(str{:});
-                    str_fun = [str_fun,'*','cos(',str,')'];
-                elseif length(find(inds_cos))<length(find(inds_sin))
-                    str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],find(inds_sin),'uni',0);
-                    for j=1:length(find(inds_sin))
-                        if ~(str{j}(1)=='-')
-                            str{j}=['+',str{j}];
-                        end
+                    if ~isempty(fstr)
+                        str_fun= ['@(',expr,')',num2str(obj.coeff),'*',fstr];
+                    else
+                        str_fun= ['@(',expr,')',num2str(obj.coeff)];
                     end
-                    str = strcat(str{:});
-                    str_fun = [str_fun,'*','sin(',str,')'];
+                    if length(find(inds_cos))>length(find(inds_sin))
+                        str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],find(inds_cos),'uni',0);
+                        for j=1:length(find(inds_cos))
+                            if ~(str{j}(1)=='-')
+                                str{j}=['+',str{j}];
+                            end
+                        end
+                        str = strcat(str{:});
+                        str_fun = [str_fun,'*','cos(',str,')'];
+                    elseif length(find(inds_cos))<length(find(inds_sin))
+                        str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],find(inds_sin),'uni',0);
+                        for j=1:length(find(inds_sin))
+                            if ~(str{j}(1)=='-')
+                                str{j}=['+',str{j}];
+                            end
+                        end
+                        str = strcat(str{:});
+                        str_fun = [str_fun,'*','sin(',str,')'];
+                    % else
+                    %     str_fun = [str_fun,'+0*',vars{1}];
+                    end
+                    obj.fHandle = eval(str_fun);
+    
+                    % 
+                    % 
+                    % fUnits = arrayfun(@(k)unitfstr(obj,k),obj.ftag,'uni',0);
+                    % fstr = [];
+                    % for i=1:obj.nstates
+                    %     fstr = [fstr,strrep(fUnits{i},'x',vars{i})];
+                    %     if i<obj.nstates
+                    %         fstr = [fstr,'.*'];
+                    %     end
+                    % end
+                    % obj.fHandle = eval(['@(',expr,')',num2str(obj.coeff),'*',fstr]);
                 end
-                obj.fHandle = eval(str_fun);
-
-                % 
-                % 
-                % fUnits = arrayfun(@(k)unitfstr(obj,k),obj.ftag,'uni',0);
-                % fstr = [];
-                % for i=1:obj.nstates
-                %     fstr = [fstr,strrep(fUnits{i},'x',vars{i})];
-                %     if i<obj.nstates
-                %         fstr = [fstr,'.*'];
-                %     end
-                % end
-                % obj.fHandle = eval(['@(',expr,')',num2str(obj.coeff),'*',fstr]);
             end
         end
 
@@ -381,14 +387,16 @@ classdef term < absterm
 
         function m = get_scale(obj,scales)
             m = 1;
-            if isequal(class(obj.ftag),'double')
-                if all(isreal(obj.ftag))
-                    m=m*prod(scales(1:obj.nstates).^obj.ftag);
+            if ~isempty(scales)
+                if isequal(class(obj.ftag),'double')
+                    if all(isreal(obj.ftag))
+                        m=m*prod(scales(1:obj.nstates).^obj.ftag);
+                    end
                 end
-            end
-            if ~isempty(obj.linOp)
-                if isequal(class(obj.linOp),'diffOp')
-                    m=m/prod(scales(obj.nstates+1:end).^obj.linOp.difftags);
+                if ~isempty(obj.linOp)
+                    if isequal(class(obj.linOp),'diffOp')
+                        m=m/prod(scales(obj.nstates+1:end).^obj.linOp.difftags);
+                    end
                 end
             end
         end
