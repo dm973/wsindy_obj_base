@@ -248,7 +248,7 @@ classdef term < absterm
             end
             
             if isequal(obj.ftag,zeros(1,obj.nstates))
-                obj.fHandle = eval(['@(',expr,')0*',vars{1}]);
+                obj.fHandle = eval(['@(',expr,')',num2str(obj.coeff),'+0*',vars{1}]);
             else
                 if and(all(real(obj.ftag)==imag(obj.ftag)),any(obj.ftag))
                     str = arrayfun(@(i)[num2str(real(obj.ftag(i))),'*',vars{i}],1:obj.nstates,'uni',0);
