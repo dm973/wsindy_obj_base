@@ -366,6 +366,15 @@ classdef WS_opt < handle
             if any(S)
                 if isempty(x0)
                     if diff(size(A))>=0
+                        % 
+                        % reg0 = rank(A,norm(A)*10^-4);
+                        % reg_inds = abs(b'*A)./vecnorm(A)/norm(b);
+                        % [~,reg_inds] = sort(reg_inds,'descend');
+                        % reg_inds = reg_inds(1:min(reg0,end));
+                        % x0 = zeros(size(A,2),1);
+                        % x0(reg_inds) = A(:,reg_inds) \ b;
+                        % x0 = obj.inject_sparse(x0,S);
+
                         x0 = obj.inject_sparse(lsqminnorm(A,b),S);
                     else
                         x0 = obj.inject_sparse(A\b,S);

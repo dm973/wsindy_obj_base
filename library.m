@@ -52,47 +52,104 @@ classdef library < handle
             fs = cellfun(@(t)t.fHandle,obj.terms(inds),'uni',0);
         end
 
-        function obj = add_terms(obj,tags,gradon,dup)
+        function obj = add_tags(obj,varargin)
+
+            p = inputParser;
+            addParameter(p,'polys',[]);
+            addParameter(p,'trigs',[]);
+            addParameter(p,'uni',1);
+            addParameter(p,'neg',0);
+            addParameter(p,'boolT',[]);
+            addParameter(p,'boolTL',[]);
+            addParameter(p,'lhs',[]);
+            addParameter(p,'gradOn',0)
+            parse(p,varargin{:})
+            polys = p.Results.polys;
+            trigs = p.Results.trigs;
+            uni = p.Results.uni;
+            neg = p.Results.neg;
+            boolT= p.Results.boolT;
+            boolTL = p.Results.boolTL;
+            lhs = p.Results.lhs;
+            gradOn = p.Results.gradOn;
+        
+            tags_in = [];
+            for p = 1:length(polys)
+                monom_powers = partitionNk(polys(p),obj.nstates);
+                tags_in = [tags_in;monom_powers];
+            end
+        
+            if neg==1
+                a = (-ones(1,obj.nstates)).^de2bi(0:2^obj.nstates-1);
+                tags_in = cell2mat(arrayfun(@(i)tags_in*diag(a(i,:)),(1:2^obj.nstates)','uni',0));
+            end
+
+            if isvector(trigs)
+                for k=1:length(trigs)
+                    trig_inds = [-trigs(k)*1i*eye(obj.nstates);trigs(k)*1i*eye(obj.nstates)];
+                    tags_in = [tags_in; trig_inds];
+                end
+                tags_in = unique(tags_in,'rows');
+            else
+                for k=1:size(trigs,1)
+                    trig_inds = [-1i*diag(trigs(k,:));1i*diag(trigs(k,:))];
+                    tags_in = [tags_in; trig_inds];
+                end
+                tags_in = unique(tags_in,'rows');
+            end
+
+            if ~isempty(boolT)
+                tags_in = unique(tags_in(boolT(tags_in),:),'rows');
+            end
+            if ~isempty(boolTL)
+                tags_in = unique(tags_in(boolTL(tags_in,lhs),:),'rows');
+            end
+        
+            if ~uni
+                tags_in = mat2cell(tags_in,ones(size(tags_in,1),1),size(tags_in,2));
+            end
+            obj.add_terms(tags_in,gradOn);
+
+        end
+
+
+
+        function obj = add_terms(obj,terms_in,gradon,dup)
             if ~exist('gradon','var')
                 gradon = 1;
             end
             if ~exist('dup','var')
                 dup = 0;
             end
-            if isequal(class(tags),'double') % if collection of pw terms, then add
-                tags = mat2cell(tags,ones(size(tags,1),1),size(tags,2));
-            elseif isequal(class(tags),'function_handle')
-                tags = term('fHandle',tags);
+            if isequal(class(terms_in),'double') % if collection of pw terms, then add
+                terms_in = mat2cell(terms_in,ones(size(terms_in,1),1),size(terms_in,2));
+            elseif isequal(class(terms_in),'function_handle')
+                terms_in = term('fHandle',terms_in);
             end
-            if isequal(class(tags),'cell')
-                for j=1:length(tags)
-                    if or(dup,~any(cellfun(@(t)isequal(t,tags{j}),obj.tags)))
-                        if isequal(class(tags{j}),'double')
-                            obj.terms = [obj.terms,{term('ftag',tags{j},'gradon',gradon)}];
-                            obj.tags = [obj.tags,tags(j)];
-                    elseif isequal(class(tags{j}),'function_handle')
-                            obj.terms = [obj.terms,{term('fHandle',tags{j},'gradon',gradon)}];
-                            obj.tags = [obj.tags,tags(j)];
-                        elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(tags{j})))
-                            obj.terms = [obj.terms,{tags{j}}];
-                            obj.tags = [obj.tags,tags(j)];
+            if isequal(class(terms_in),'cell')
+                for j=1:length(terms_in)
+                    if or(dup,~any(cellfun(@(t)isequal(t,terms_in{j}),obj.tags)))
+                        if isequal(class(terms_in{j}),'double')
+                            obj.terms = [obj.terms,{term('ftag',terms_in{j},'gradon',gradon)}];
+                            obj.tags = [obj.tags,terms_in(j)];
+                    elseif isequal(class(terms_in{j}),'function_handle')
+                            obj.terms = [obj.terms,{term('fHandle',terms_in{j},'gradon',gradon)}];
+                            obj.tags = [obj.tags,terms_in(j)];
+                        elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(terms_in{j})))
+                            obj.terms = [obj.terms,{terms_in{j}}];
+                            obj.tags = [obj.tags,terms_in(j)];
                         end
                     end
                 end
-            elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(tags)))
-                for j=1:length(tags)
-                    % try
-                    %     check = functions(tags(j).fHandle).function;
-                    % catch
-                    %     check = NaN;
-                    % end
-                    % if or(dup,~any(cellfun(@(t)isequal(functions(t.fHandle).function,check),obj.terms)))
-                        obj.terms = [obj.terms,{tags(j)}];
-                        obj.tags = [obj.tags,{tags(j).ftag}];
-                    % end
+            elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(terms_in)))
+                for j=1:length(terms_in)
+                    obj.terms = [obj.terms,{terms_in(j)}];
+                    obj.tags = [obj.tags,{terms_in(j).ftag}];
                 end
             end
-            obj.nstates = obj.terms{1}.nstates;
+            if ~isempty(terms_in)
+                obj.nstates = obj.terms{1}.nstates;
+            end
         end
 
         function Theta = evalterms(obj,dat,S)
