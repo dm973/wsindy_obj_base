@@ -393,8 +393,10 @@ classdef wsindy_model < handle
                 diff_ord = t_diff_ords(1);
                 if obj.nstates == obj.numeq
                     rhs = @(x)[reshape(x(obj.nstates+1:diff_ord*obj.nstates),[],1);rhs_f(x)];
-                 elseif obj.nstates == 2*obj.numeq
+                elseif obj.nstates == 2*obj.numeq
                     rhs = @(x)[reshape(x(obj.nstates/2+1:obj.nstates),[],1);rhs_f(x)];
+                else                    
+                    rhs = rhs_f;
                 end
             else
                 disp(['cannot form rhs, diff orders not matching'])
