@@ -387,22 +387,33 @@ classdef wsindy_model < handle
                     end
                 end
             end
-
-            if all(cellfun(@(lhs)isequal(lhs.linOp.difftags,1),obj.lhsterms))
-                rhs = @(x)rhs_fun(feats,params,x);
-            elseif all(cellfun(@(lhs)isequal(lhs.linOp.difftags,2),obj.lhsterms))
-                rhs_f = @(x)rhs_fun(feats,params,x);
+            rhs_f = @(x)rhs_fun(feats,params,x);
+            t_diff_ords = cellfun(@(lhs)lhs.linOp.difftags(end),obj.lhsterms);
+            if range(t_diff_ords)==0
+                diff_ord = t_diff_ords(1);
                 if obj.nstates == obj.numeq
-                    rhs = @(x)[reshape(x(obj.nstates+1:2*obj.nstates),[],1);rhs_f(x)];
-                elseif obj.nstates == 2*obj.numeq
+                    rhs = @(x)[reshape(x(obj.nstates+1:diff_ord*obj.nstates),[],1);rhs_f(x)];
+                 elseif obj.nstates == 2*obj.numeq
                     rhs = @(x)[reshape(x(obj.nstates/2+1:obj.nstates),[],1);rhs_f(x)];
                 end
-            elseif all(cellfun(@(lhs)isequal(lhs.linOp.difftags,3),obj.lhsterms))
-                rhs_f = @(x)rhs_fun(feats,params,x);
-                if obj.nstates == obj.numeq
-                    rhs = @(x)[reshape(x(obj.nstates+1:3*obj.nstates),[],1);rhs_f(x)];
-                end
+            else
+                disp(['cannot form rhs, diff orders not matching'])
             end
+            % if all(cellfun(@(lhs)isequal(lhs.linOp.difftags,1),obj.lhsterms))
+            %     rhs = @(x)rhs_fun(feats,params,x);
+            % elseif all(cellfun(@(lhs)isequal(lhs.linOp.difftags,2),obj.lhsterms))
+            %     rhs_f = @(x)rhs_fun(feats,params,x);
+            %     if obj.nstates == obj.numeq
+            %         rhs = @(x)[reshape(x(obj.nstates+1:2*obj.nstates),[],1);rhs_f(x)];
+            %     elseif obj.nstates == 2*obj.numeq
+            %         rhs = @(x)[reshape(x(obj.nstates/2+1:obj.nstates),[],1);rhs_f(x)];
+            %     end
+            % elseif all(cellfun(@(lhs)isequal(lhs.linOp.difftags,3),obj.lhsterms))
+            %     rhs_f = @(x)rhs_fun(feats,params,x);
+            %     if obj.nstates == obj.numeq
+            %         rhs = @(x)[reshape(x(obj.nstates+1:3*obj.nstates),[],1);rhs_f(x)];
+            %     end
+            % end
 
             params_diff={}; feats_diff={};
 

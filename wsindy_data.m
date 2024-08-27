@@ -407,7 +407,7 @@ classdef wsindy_data < handle
         end
 
         function obj = set_scales(obj,scales)
-            if ~isequal(length(scales),obj.nstates+obj.ndims)
+            if or(isequal(scales,'Ubar'),~isequal(length(scales),obj.nstates+obj.ndims))
                 if isempty(scales)
                     scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
                     scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);

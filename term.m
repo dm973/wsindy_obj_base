@@ -193,7 +193,7 @@ classdef term < absterm
         function rhs = get_rhs(obj)
             if isequal(class(obj.linOp),'diffOp')
                 ns = find([obj.gradterms.coeff]);
-                if and(length(obj.linOp.difftags)==1,length(ns)==1)
+                if and(isscalar(obj.linOp.difftags),isscalar(ns))
                     % if obj.ftag(ns)==1
                     %     rhs = @(varargin) varargin{ns+obj.nstates};
                     % else
@@ -390,7 +390,9 @@ classdef term < absterm
             if ~isempty(scales)
                 if isequal(class(obj.ftag),'double')
                     if all(isreal(obj.ftag))
-                        m=m*prod(scales(1:obj.nstates).^obj.ftag);
+                        for k=1:size(obj.ftag,1)
+                            m=m*prod(scales(1:obj.nstates).^obj.ftag(k,:));
+                        end
                     end
                 end
                 if ~isempty(obj.linOp)
