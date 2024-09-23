@@ -89,6 +89,10 @@ classdef testfcn < handle
                 obj.phifuns = {obj.phifuns};
             elseif isequal(obj.phifuns,'delta')
                 obj.phifuns = {@(x)x==0};
+            elseif isequal(obj.phifuns,'pp')
+                obj.phifuns = {'pp'};
+            elseif isequal(obj.phifuns,'Gauss')
+                obj.phifuns = {'Gauss'};
             end
 
             if length(obj.phifuns)~=obj.ndims
@@ -158,7 +162,11 @@ classdef testfcn < handle
                         mt = obj.param(i);
                     elseif isequal(obj.meth,'FFT')
                         dat.getcorners;
-                        mt = get_tf_support(obj.phifuns{i},dat.dims(i),obj.param(i),dat.ks(obj.stateind,i));
+                        if isequal(class(obj.phifuns{i}),'function_handle')
+                            mt = get_tf_support(obj.phifuns{i},dat.dims(i),obj.param(i),dat.ks(obj.stateind,i));
+                        else
+                            [obj.phifuns{i},mt] = obj.get_phi_handle(dat.ks(obj.stateind,i),dat.dims(i),obj.phifuns{i},obj.param{i});
+                        end
                     elseif isequal(obj.meth,'timefrac')
                         mt = floor(length(dat.grid{i})*obj.param(i));
                     elseif isequal(obj.meth,'mode1frac')
@@ -166,18 +174,6 @@ classdef testfcn < handle
                         mt = ceil(mt*obj.param{i}(2));
                     elseif isequal(obj.meth,'mtmin')
                         mt = obj.param(i)*obj.mtmin;
-                    elseif isequal(obj.meth,'slDMD')
-                        addpath(genpath('~/repos/optdmd'))
-                        %%% appears not to work well because are usually 3+ distinct frequencies clusters
-                        U = cell2mat(dat.Uobs(:)')';
-                        TimeSpan = dat.grid{1};
-                        nComponents = 2; %number of distinct time scales present
-                        global_SVD = 0; %use global SVD modes for each DMD rather than individual SVD on each window
-                        wSteps = ceil(0.25*dat.get_mode(obj.stateind,1,1));
-                        stepSize = ceil(wSteps*0.025);
-                        [T_centroids,mr_res,km_centroids,nSteps,nSlide,thresh_pct] = slDMD(U,TimeSpan,stepSize,nComponents,global_SVD,wSteps);
-                        mt = min(obj.mtmax,max(obj.mtmin,ceil( 0.5*((1-obj.param(i))*T_centroids(1)+obj.param(i)*T_centroids(2)))));
-%                         slDMD_script;
                     end
                     mt = min(max(obj.mtmin(i),mt),obj.mtmax(i));
                 end
@@ -192,7 +188,7 @@ classdef testfcn < handle
             if isequal(class(obj.subinds),'double')
                 if isempty(obj.subinds)
                     obj.subinds = arrayfun(@(i)1:max(1,floor(obj.rads(i)/4)):dat.dims(i)-2*obj.rads(i),1:dat.ndims,'uni',0);
-                elseif length(obj.subinds)==1
+                elseif isscalar(obj.subinds)
                     if obj.subinds>=0
                         obj.subinds = arrayfun(@(i)1:obj.subinds:dat.dims(i)-2*obj.rads(i),1:dat.ndims,'uni',0);
                     else
@@ -291,6 +287,30 @@ classdef testfcn < handle
                 Cfs = Cfs.*(obj.rads(k)*obj.dv(k)).^(-diffs(:))*obj.dv(k);
             end
             % Cfs = Cfs/norm(Cfs(1,:),1);
+        end
+
+        function [phifun,m,p] = get_phi_handle(obj,k,N,phi_class,param)
+            if length(param)~=3
+                tau = 10^-10;
+                tauhat = 2;
+                maxd = 1;
+            else
+                tau = param(1);
+                tauhat = param(2);
+                maxd = param(3);
+            end
+            if isequal(phi_class,'pp')
+                l = @(m,k,N) log((2*m-1)./m.^2).*(4*pi^2*k^2*m.^2-3*N^2*tauhat^2)-2*N^2*tauhat^2*log(tau);
+                mstar1 = sqrt(3)/pi*N/2/k*tauhat;
+                mstar2 = 1/pi*tauhat*(N/2)/k*sqrt(log(exp(1)^3/tau^8));
+                m = floor(min(fzero(@(m)l(m,k,N), [mstar1 mstar2]),(N-1)/2));
+                p = max(maxd+1,ceil(log(tau)/log(1-(1-1/m)^2)));
+                phifun = @(x) (1-x.^2).^p;
+            elseif isequal(phi_class,'Gauss')
+                m = floor(min(1+N*tauhat/2/pi/k*sqrt(-2*log(tau)),(N-1)/2));
+                p = 2*pi*k/tauhat/N;
+                phifun = @(x) exp(-(m*p*x).^2/2); % p = dx/sig
+            end 
         end
     end
 

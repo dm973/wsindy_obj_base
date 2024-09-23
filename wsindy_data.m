@@ -422,7 +422,7 @@ classdef wsindy_data < handle
 
             obj.Uobs = arrayfun(@(i)obj.Uobs{i}/scales(i),1:obj.nstates,'un',0);
             obj.grid = arrayfun(@(i)obj.grid{i}/scales(obj.nstates+i),1:obj.ndims,'un',0);
-            obj.dv = obj.dv(:)'/scales(obj.nstates+1:end);
+            obj.dv = obj.dv(:)'./scales(obj.nstates+1:end);
             obj.scales = scales;
         end
 

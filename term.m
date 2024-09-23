@@ -75,8 +75,17 @@ classdef term < absterm
         function Y = evaltermLinOp(obj,dat)
             if isempty(obj.linOp)
                 Y = obj.evalterm(dat);
-            else
-                Y = obj.linOp.evalterm(obj.evalterm(dat));
+            else         
+                if isequal(class(obj.linOp),'diffOp')
+                    if isempty(obj.linOp.Dmats)
+                        obj.linOp.get_Dmats(dat);
+                    end
+                end
+                if dat.ndims==1
+                    Y = obj.linOp.evalterm(obj.evalterm(dat));
+                else
+                    Y = obj.linOp.evalterm({obj.evalterm(dat)});
+                end
             end
         end
 
@@ -165,7 +174,7 @@ classdef term < absterm
                 s = [s,obj.get_str_0];
             end
             if isequal(class(obj.linOp),'diffOp')
-                s = ['(d/dt)^',num2str(obj.linOp.difftags),s];
+                s = ['D^[',strrep(num2str(obj.linOp.difftags),'  ',','),']',s];
             end
         end
 
@@ -187,7 +196,8 @@ classdef term < absterm
             % s = strrep(s,'.*','');
             % s = strrep(s,'.^','^');
             s = strrep(s,')1*',')');
-            s = s(strfind(s,')')+1:end);
+            x = strfind(s,')')+1;
+            s = s(x(1):end);
         end
 
         function rhs = get_rhs(obj)
@@ -378,10 +388,14 @@ classdef term < absterm
 
         function Xcell = dat2cell(obj,X)
             n = find(size(X)==obj.nstates);
-            if n(1)==1
-                Xcell = mat2cell(X,ones(obj.nstates,1),size(X,2));
-            elseif n(1)==2
-                Xcell = mat2cell(X,size(X,1),ones(1,obj.nstates))';
+            if ~isempty(n)
+                if n(1)==1
+                    Xcell = mat2cell(X,ones(obj.nstates,1),size(X,2));
+                elseif n(1)==2
+                    Xcell = mat2cell(X,size(X,1),ones(1,obj.nstates))';
+                end
+            else
+                Xcell = {X};
             end
         end
 
