@@ -418,12 +418,8 @@ classdef wsindy_model < handle
                 for i=1:obj.ntraj
                     L1_ = cellfun(@(L)sparse(zeros(size(L{1}))),obj.L1{i},'uni',0);
                     for j=1:length(S)
-                        % L1_ = cellfun(@(Lold,Lnew) Lold + obj.weights(S(j))*Lnew{S(j)},L1_,obj.L1{i},'uni',0);
-
                         for k=1:length(L1_)
-                            L1_{k} = L1_{k} + obj.weights(S(j))*obj.L1{i}{k}{S(j)};
-                        end
-
+                            L1_ = cellfun(@(Lold,Lnew) Lold + obj.weights(S(j))*Lnew{S(j)},L1_,obj.L1{i},'uni',0);
                     end
                     L1w{i}=cell2mat(L1_(:));
                 end

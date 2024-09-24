@@ -203,15 +203,11 @@ classdef testfcn < handle
             obj.subinds = cellfun(@(s)s(1:min(end,obj.Kmax)),obj.subinds,'uni',0);
         end
     
-    % end
-    % 
-    % methods (Hidden = true)
-
         function obj = get_Cfsfft(obj)
             for k=1:obj.ndims
                 [m,n] = size(obj.Cfs{k});
                 if size(obj.Cfsfft{k},1)~=m
-                    obj.Cfsfft{k} = fft([zeros(m,obj.dims(k)-n) obj.Cfs{k}],[],2);
+                    obj.Cfsfft{k} = fft([obj.Cfs{k}(:,end) zeros(m,obj.dims(k)-n) obj.Cfs{k}(:,1:end-1)],[],2);
                 end
             end
         end
