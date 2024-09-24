@@ -14,7 +14,7 @@ if  gamma ~= 0
 end
 
 if ~isempty(reg_inds) % initial guess: truncated Least-squares
-    if isequal(class(reg_inds),'double')
+    if and(isequal(class(reg_inds),'double'),isscalar(reg_inds))
         reg0 = rank(Theta,norm(Theta)*reg_inds);
         reg_inds = abs(dXdt'*Theta)./vecnorm(Theta)/norm(dXdt);
         [~,reg_inds] = sort(reg_inds,'descend');
