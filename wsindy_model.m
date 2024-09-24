@@ -429,41 +429,6 @@ classdef wsindy_model < handle
             % disp(['completed.'])
         end
 
-        function L1w = add_L1(obj)
-            L1w = cell(obj.ntraj,1);
-            if obj.toggleH
-                S = obj.get_supp{1};
-                for i=1:obj.ntraj
-                    L1_ = cellfun(@(L)sparse(size(L{1})),obj.L1{i},'uni',0);
-                    for j=1:length(S)
-                        % L1_ = cellfun(@(Lold,Lnew) Lold + obj.weights(S(j))*Lnew{S(j)},L1_,obj.L1{i},'uni',0);
-
-                        for k=1:length(L1_)
-                            size(L1_{k})
-                            size(obj.L1{i}{k}{S(j)})
-                            L1_{k} = L1_{k} + obj.weights(S(j))*obj.L1{i}{k}{S(j)};
-                        end
-
-                    end
-                    L1w{i}=cell2mat(L1_(:));
-                end
-            else
-                w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
-                S = obj.get_supp;                
-                for i=1:obj.ntraj
-                    L1_ = cell(size(obj.L1{i}));
-                    for j=1:length(obj.L1{i})
-                        dims = num2cell(size(obj.L0{i}{j}));
-                        L1_{j} = sparse(dims{:});
-                        for k=1:length(S{j})
-                            L1_{j} = L1_{j} + w{j}(S{j}(k))*obj.L1{i}{j}{S{j}(k)};
-                        end
-                    end
-                    L1w{i} = cell2mat(L1_(:));
-                end
-            end
-        end
-
         function obj = get_L(obj)
             w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
             S = obj.get_supp;
