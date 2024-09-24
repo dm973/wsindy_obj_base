@@ -387,9 +387,16 @@ classdef wsindy_model < handle
 
             if isempty(obj.L0)
                 obj.L0 = repmat({cell(obj.numeq,1)},obj.ntraj,1);
-                obj.L1 = repmat({arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0)},obj.ntraj,1);
+                if obj.toggleH
+                    obj.L1 = repmat({repmat(arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0),obj.nstates,1)},obj.ntraj,1);
+                else
+                    obj.L1 = repmat({arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0)},obj.ntraj,1);
+                end
             end
             S = obj.get_supp;
+            if isempty(obj.features)
+                obj.get_features;
+            end
             for j=1:obj.ntraj
                 for i=1:obj.numeq
                     if isempty(obj.L0{j}{i})
@@ -398,12 +405,23 @@ classdef wsindy_model < handle
                         V = obj.tf{j}{i}.get_testmat(obj.lhsterms{i}.linOp);
                         obj.L0{j}{i} = V*grads(:,1:obj.coarsen_L:end);
                     end
-                    for k=1:length(obj.lib(i).terms)
-                        if and(ismember(k,S{i}),isempty(obj.L1{j}{i}{k}))
-                            grads = obj.lib(i).terms{k}.diffmat(obj.dat(j));
-                            V = obj.tf{j}{i}.get_testmat(obj.lib(i).terms{k}.linOp);
-                            A = cell2mat(grads(:)');
-                            obj.L1{j}{i}{k} = V*A(:,1:obj.coarsen_L:end);
+                    if obj.toggleH
+                        for k=1:length(obj.lib.terms)
+                            if and(ismember(k,S{1}),isempty(obj.L1{j}{i}{k}))
+                                grads = obj.features{i}{ismember(S{1},k)}.diffmat(obj.dat(j));
+                                V = obj.tf{j}{i}.get_testmat(obj.features{i}{ismember(S{1},k)}.linOp);
+                                A = cell2mat(grads(:)');
+                                obj.L1{j}{i}{k} = V*A(:,1:obj.coarsen_L:end);
+                            end
+                        end
+                    else
+                        for k=1:length(obj.lib(i).terms)
+                            if and(ismember(k,S{i}),isempty(obj.L1{j}{i}{k}))
+                                grads = obj.lib(i).terms{k}.diffmat(obj.dat(j));
+                                V = obj.tf{j}{i}.get_testmat(obj.lib(i).terms{k}.linOp);
+                                A = cell2mat(grads(:)');
+                                obj.L1{j}{i}{k} = V*A(:,1:obj.coarsen_L:end);
+                            end
                         end
                     end
                 end 
@@ -416,11 +434,13 @@ classdef wsindy_model < handle
             if obj.toggleH
                 S = obj.get_supp{1};
                 for i=1:obj.ntraj
-                    L1_ = cellfun(@(L)sparse(zeros(size(L{1}))),obj.L1{i},'uni',0);
+                    L1_ = cellfun(@(L)sparse(size(L{1})),obj.L1{i},'uni',0);
                     for j=1:length(S)
                         % L1_ = cellfun(@(Lold,Lnew) Lold + obj.weights(S(j))*Lnew{S(j)},L1_,obj.L1{i},'uni',0);
 
                         for k=1:length(L1_)
+                            size(L1_{k})
+                            size(obj.L1{i}{k}{S(j)})
                             L1_{k} = L1_{k} + obj.weights(S(j))*obj.L1{i}{k}{S(j)};
                         end
 
@@ -447,6 +467,10 @@ classdef wsindy_model < handle
         function obj = get_L(obj)
             w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
             S = obj.get_supp;
+            if obj.toggleH
+                S = repmat(S,1,obj.nstates);
+                w = repmat(w,1,obj.nstates);
+            end
             obj.L = obj.L0;
             for i=1:obj.ntraj
                 for j=1:obj.numeq
@@ -498,15 +522,18 @@ classdef wsindy_model < handle
             end
             if toggle_compute
                 if any(obj.weights)
-                    % obj.L = cellfun(@(L)cell2mat(L),obj.L0,'uni',0);
-                    % obj.L = cellfun(@(x,y) x - y, obj.L,add_L1(obj),'uni',0);
-                    % if obj.multitest == 1
-                    %     obj.L = cell2mat(obj.L);
+                    % if obj.toggleH
+                    %     obj.L = cellfun(@(L)cell2mat(L),obj.L0,'uni',0);
+                    %     obj.L = cellfun(@(x,y) x - y, obj.L,add_L1(obj),'uni',0);
+                    %     if obj.multitest == 1
+                    %         obj.L = cell2mat(obj.L);
+                    %     else
+                    %         obj.L = blkdiag(obj.L{:});
+                    %     end
                     % else
-                    %     obj.L = blkdiag(obj.L{:});
+                        obj.get_L;
+                        obj.cov = (obj.L*R0)*(obj.L');
                     % end
-                    obj.get_L;
-                    obj.cov = (obj.L*R0)*(obj.L');
                 else
                     obj.cov = speye(sum(cellfun(@(LS) sum(cellfun(@(L)size(L,1),LS)), obj.L0)));
                 end
