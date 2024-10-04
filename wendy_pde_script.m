@@ -1,29 +1,39 @@
-% clear all; close all; clc
-rng(1);
-rng_seed = rng().Seed; rng(rng_seed);
-
 %% load data
 
 %%% choose PDE
-pde_num = 16; % set to 0 to run on pre-loaded dataset
 dr = '~/Dropbox/Boulder/research/data/WSINDy_PDE/datasets/';
 pde_names = {'burgers.mat',...          %1
     'burgers_vis.mat',...               %2
-    'KS.mat',...                        %3
-    'KdV.mat',...                       %4
-    'transportDiff.mat',...             %5
-    'hyperKS.mat',...                   %6
-    'burgers_vis_cubic.mat',...         %7
-    'advecdiff_exact.mat',...           %8
-    'visburgs_etdrk4.mat',...           %9
-    'fkpp.mat',...                      %10
-    'sod.mat',...                       %11
-    'lin_schrod.mat',...                %12
-    'NLS.mat',...                       %13
-    'porous.mat',...                    %14
-    'Sine_Gordon.mat',...               %15
-    'Nav_Stokes.mat',...                %16
+    'visburgs_etdrk4.mat',...           %3
+    'burgers_smallamp.mat',...          %4
+    'burgers_vis0025_cubic2.mat',...    %5
+    'KdV.mat',...                       %6
+    'KS.mat',...                        %7
+    'hyperKS.mat',...                   %8
+    'lin_schrod.mat',...                %9 %%%
+    'NLS.mat',...                       %10
+    'NLS_long.mat',...                  %11
+    'transportDiff.mat',...             %12 
+    'advecdiff_exact.mat',...           %13 %%%
+    'AC_temp.mat',...                   %14
+    'fkpp.mat',...                      %15
+    'sod.mat',...                       %16 %%
+    'bw.mat',...                        %17
+    'bwEpstar.mat',...                  %18
+    'porous2.mat',...                   %19
+    'Sine_Gordon.mat',...               %20
+    'wave2Du3.mat',...                  %21
+    'rxn_diff.mat',...                  %22
+    'full_or_old/rxn_diff_old.mat',...  %23
+    'Nav_Stokes.mat',...                %24
+    '2D_Blast_prat_90_r.mat',...        %25
+    'bwE.mat',...                       %26 %%2D
+    'wave3D.mat',...                    %27
+    'wave3D_N128.mat',...               %28
     };
+
+pde_num = 15; % set to 0 to run on pre-loaded dataset
+
 if pde_num~=0
     pde_name = pde_names{pde_num};
     load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
@@ -36,11 +46,11 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([8 8 4]);
+Uobj.coarsen([-64 -64 -100]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.2;
+noise_ratio = 0.01;
 rng('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
@@ -54,6 +64,8 @@ numeq = size(lhsterms,1);
 %% get library
 
 [lib,true_S] = true_lib(nstates,true_nz_weights);
+x_diffs = cell2mat(true_nz_weights');
+x_diffs = x_diffs(:,nstates+1:end-2);
 
 %% get test function
 
@@ -65,14 +77,17 @@ if toggle_strong_form==1
 else
     phifun = 'pp';
     tf_meth = 'FFT';
-    tau = 10^-10;
-    tauhat = 1;
-
-    x_diffs = cell2mat(true_nz_weights');
-    x_diffs = x_diffs(:,nstates+1:end-2);
+    tau = 10^-8;
+    tauhat = 2;
     tf_param = {[tau tauhat max(x_diffs(:))],[tau tauhat max(lhs(:,end))]};
+
+    phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
+    tf_meth = 'timefrac';
+    tf_param = [0.15 0.15];
+
+    subinds = -3;
 end
-tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,...
+tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
     'meth',tf_meth,'param',tf_param,'stateind',find(lhs(i,1:nstates),1)),(1:size(lhs,1))','uni',0);
 fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
@@ -82,7 +97,7 @@ WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
 
 %% WENDy solve
 
-[WS,w_its,res,res_0,CovW] = WS_opt().wendy(WS,'maxits',20,'ittol',10^-4,'diag_reg',10^-4);
+[WS,w_its,res,res_0,CovW] = WS_opt().wendy(WS,'maxits',20,'ittol',10^-4,'diag_reg',10^-4,'trim_rows',1);
 total_time_wendy = toc;
 
 %% view governing equations, MSTLS loss, learned model accuracy
@@ -104,7 +119,7 @@ if exist('true_nz_weights','var')
     fprintf('\nCoeff err=%1.2e',E2)
 end
 
-figure(1);clf
+% figure(1);clf
 m = 64;
 colormap([copper(m);cool(m)])
 for j=1:Uobj.nstates

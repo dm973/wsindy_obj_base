@@ -418,6 +418,7 @@ classdef WS_opt < handle
             p = inputParser;
             addRequired(p,'WS');
             addParameter(p,'maxits',default_maxits);
+            addParameter(p,'trim_rows',0);
             addParameter(p,'ittol',default_ittol);
             addParameter(p,'diag_reg',default_diag_reg);
             addParameter(p,'w',default_w);
@@ -433,6 +434,7 @@ classdef WS_opt < handle
             regmeth = p.Results.regmeth;
             verbosity = p.Results.verbose;
             linregargs = p.Results.linregargs;
+            tr = p.Results.trim_rows;
 
             if verbosity
                 tic,
@@ -446,6 +448,11 @@ classdef WS_opt < handle
                 end
             else
                 WS = obj.ols(WS,'linregargs',linregargs);
+            end
+
+            if tr>0
+                WS.get_Lfac;
+                WS.trim_rows('trim_factor',tr);
             end
             
             check = 1;

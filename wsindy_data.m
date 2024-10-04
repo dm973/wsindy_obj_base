@@ -73,17 +73,17 @@ classdef wsindy_data < handle
         function obj = coarsen(obj,s,d)
 
             if ~exist('d','var')
-                if length(s)==1
+                if isscalar(s)
                     d=1:obj.ndims;
                     s = s + d*0;
                 else
-                    d=1:length(s);
+                    d=1:min(length(s),obj.ndims);
                 end
             else
-                d = d(1:length(s));
+                d = d(1:min(length(s),obj.ndims));
             end
 
-            for i=1:length(s)
+            for i=1:length(d)
                 if s(i)>0
                     obj = coarsen_dim(obj,s(i),d(i));
                 else

@@ -525,6 +525,51 @@ classdef wsindy_model < handle
             b = RT \ b;
         end
 
+
+        % row trimming
+
+        function obj = trim_rows(obj,varargin)
+            p = inputParser;
+            addParameter(p,'meth','std');
+            addParameter(p,'trim_factor',10);
+            parse(p,varargin{:})
+            for i=1:obj.ntraj
+                for j=1:obj.numeq
+                    reduced_row_num =  floor(length(obj.bs{i}{j})/p.Results.trim_factor);        
+                    if isequal(p.Results.meth,'std')
+                        [~,inds_keep] = sort(std([obj.bs{i}{j} obj.Gs{i}{j}],[],2),'descend');
+                    elseif isequal(p.Results.meth,'std_corner')
+                                % min_rows = floor(length(b_0)/1)
+                        % tol_cp = 0.5;
+                        % [F,x] = histcounts(GG,floor(sqrt(size(GG,1))),'Normalization','pdf');
+                        % dat = fliplr(cumsum(fliplr(F)));
+                        % dat = dat/norm(dat);
+                        % [mu,res_cp] = findchangepts(dat,'statistic','linear');
+                        % inds_keep = GG>x(mu);
+                        % if or(length(find(inds_keep))<min_rows,sqrt(res_cp)>tol_cp)
+                        %     inds_keep = logical(ones(size(b_0)));
+                        % else
+                        %     figure(10)
+                        %     findchangepts(dat,'statistic','linear')
+                        % end
+                    end
+                    
+                    inds_keep = ismember((1:length(obj.bs{i}{j}))',inds_keep(1:min(end,reduced_row_num)));
+
+                    obj.Gs{i}{j} = obj.Gs{i}{j}(inds_keep,:);
+                    obj.bs{i}{j} = obj.bs{i}{j}(inds_keep,:);
+                    obj.L0{i}{j} = obj.L0{i}{j}(inds_keep,:);
+                    S = obj.get_supp;
+                    for k=1:length(S{j})
+                        obj.L1{i}{j}{S{j}(k)} = obj.L1{i}{j}{S{j}(k)}(inds_keep,:);
+                    end
+                end
+            end
+            obj.cat_Gb;
+        end
+
+
+
         % performance metrics
         function res = res(obj,meth)
             if ~exist('meth','var')
