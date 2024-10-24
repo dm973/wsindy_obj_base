@@ -32,7 +32,7 @@ pde_names = {'burgers.mat',...          %1
     'wave3D_N128.mat',...               %28
     };
 
-pde_num = 15; % set to 0 to run on pre-loaded dataset
+pde_num = 20; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};

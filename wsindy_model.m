@@ -163,7 +163,7 @@ classdef wsindy_model < handle
                         J = length(obj.lib.terms);
                         obj.Gs{j} = cellfun(@(Th,v) conv2(v,1,Th,'valid'), ...
                             mat2cell(Theta,ones(obj.nstates,1)*size(Theta,1)/obj.nstates,J),...
-                            cellfun(@(tf) tf.Cfs{1}(1,:)', obj.tf{j},'uni',0),'uni',0);
+                            cellfun(@(tf) tf.Cfs{1}(1,:)', obj.tf{j}(:),'uni',0),'uni',0);
                         obj.Gs{j} = arrayfun(@(i)obj.Gs{j}{i}(unique(min(obj.tf{j}{i}.subinds{1},obj.tf{j}{i}.dims(1)-2*obj.tf{j}{i}.rads(1))),:), 1:length(obj.Gs{j}),'uni',0)';
                     else
                         obj.Gs{j} = arrayfun(@(tf,lib) cell2mat(cellfun(@(tm) tf.test(obj.dat(j),tm),lib.terms,'uni',0)),[obj.tf{j}{:}]',obj.lib(:),'uni',0);
