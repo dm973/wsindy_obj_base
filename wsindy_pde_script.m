@@ -1,4 +1,3 @@
-addpath(genpath('../'))
 % clear all; close all; clc
 rng('shuffle'); 
 rng_seed = rng().Seed; rng(rng_seed);
@@ -6,7 +5,7 @@ rng_seed = rng().Seed; rng(rng_seed);
 %% load data
 
 %%% choose PDE
-pde_num = 0; % set to 0 to run on pre-loaded dataset
+pde_num = 11; % set to 0 to run on pre-loaded dataset
 dr = '~/Dropbox/Boulder/research/data/WSINDy_PDE/datasets/';
 pde_names = {'burgers.mat',...          %1
     'burgers_vis.mat',...               %2
@@ -21,7 +20,7 @@ pde_names = {'burgers.mat',...          %1
     'sod.mat',...                       %11
     'lin_schrod.mat',...                %12
     'NLS.mat',...                       %13
-    'porous.mat',...                    %14
+    'porous2.mat',...                   %14
     'Sine_Gordon.mat',...               %15
     };
 if pde_num~=0
@@ -36,7 +35,7 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen(1);
+Uobj.coarsen([-200 -200]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);
 
 %%% add noise
@@ -59,10 +58,10 @@ numeq = size(lhsterms,1);
 use_true = 0; % use pre-loaded terms
 
 %%% differential operators
-x_diffs = [0:6];
+x_diffs = [0:1];
 
 %%% poly/trig functions
-polys = [0:6];
+polys = [0:4];
 trigs = [];
 
 %%% custom terms
@@ -85,7 +84,7 @@ if toggle_strong_form==1
 else
     phifun = 'pp';
     tf_meth = 'FFT';
-    tau = 10^-10;
+    tau = 10^-16;
     tauhat = 3;
     tf_param = {[tau tauhat max(x_diffs)],[tau tauhat 1]};
 end

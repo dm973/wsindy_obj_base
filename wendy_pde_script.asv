@@ -33,7 +33,7 @@ pde_names = {'burgers.mat',...          %1
     '2D_Blast_prat_90_r_equi.mat',...   %29
     };
 
-pde_num = 22; % set to 0 to run on pre-loaded dataset
+pde_num = 16; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
@@ -47,11 +47,11 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-64 -64 -64]);
+Uobj.coarsen([-256 -256 -100]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.2;
+noise_ratio = 1;
 rng('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);

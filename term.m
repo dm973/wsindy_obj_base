@@ -9,7 +9,7 @@ classdef term < absterm
             default_linOp = [];
             default_ftag = [];
             default_fHandle = [];
-            default_gradterms = {};
+            default_gradterms = [];
             default_nstates = 0;
             default_coeff = 1;
             default_gradon = 1;
@@ -417,6 +417,18 @@ classdef term < absterm
             end
         end
 
+        function lap = get_lap(obj)
+            if isempty(obj.gradterms)
+                obj.get_grads;
+            end
+            for n=1:obj.nstates
+                obj.gradterms(n).get_grads;
+            end
+            lap = arrayfun(@(n)obj.gradterms(n).gradterms(n),1:obj.nstates);
+            % for n=2:obj.nstates
+            %     lap = addterm(lap,obj.gradterms(n).gradterms(n));
+            % end
+        end
 
     end
 
