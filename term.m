@@ -429,7 +429,20 @@ classdef term < absterm
             %     lap = addterm(lap,obj.gradterms(n).gradterms(n));
             % end
         end
-
+        function hess = get_hess(obj)
+            if isempty(obj.gradterms)
+                obj.get_grads;
+            end
+            for n=1:obj.nstates
+                obj.gradterms(n).get_grads;
+            end
+            hess = arrayfun(@(n)obj.gradterms(n).gradterms(:),(1:obj.nstates)','uni',0);
+            hess = vertcat(hess{:});
+            % hess = cell2mat(hess);
+            % for n=2:obj.nstates
+            %     lap = addterm(lap,obj.gradterms(n).gradterms(n));
+            % end
+        end
     end
 
 end

@@ -406,7 +406,7 @@ classdef WS_opt < handle
 
         end
 
-        function [WS,w_its,res,res_0,CovW] = wendy(obj,WS,varargin)
+        function [WS,w_its,res,res_0,CovW,RT] = wendy(obj,WS,varargin)
             % options: maxits,ittol,diag_reg,w,regmeth
 
             default_maxits = 20;
@@ -444,13 +444,13 @@ classdef WS_opt < handle
                 if isequal(w,0)
                     WS = obj.ols(WS,'S',0,'linregargs',linregargs);                    
                 else
-                    WS.add_weights(w);
+                    WS.add_weights(w,'toggle_cov',1);
                 end
             else
                 WS = obj.ols(WS,'linregargs',linregargs);
             end
 
-            if tr>0
+            if tr>1
                 WS.get_Lfac;
                 WS.trim_rows('trim_factor',tr);
             end
@@ -464,12 +464,14 @@ classdef WS_opt < handle
             WS.cat_Gb('cat','blkdiag');
             G_0 = WS.G{1};
             b_0 = WS.b{1};
+
+
             while and(check,its<maxits)
                 % disp(['iter=',num2str(its)])
                 if isequal(regmeth,'ols')
                     [G,b,RT] = WS.apply_cov(G_0(:,sparse_inds),b_0,obj.diag_reg);
                     w = obj.linreg(G,b,linregargs{:},'S',sparse_inds);
-                    WS.add_weights(w);
+                    WS.add_weights(w,'toggle_cov',1);
                 elseif isequal(regmeth,'MSTLS')
                     [WS,~,~,G,b] = obj.MSTLS(WS,'applycov',1);
                     G = blkdiag(G{:}); b = cell2mat(b);
@@ -487,10 +489,12 @@ classdef WS_opt < handle
                 its = size(w_its,2)-1;
             end
             
+            % CovW = inv(G'*G);
             Ginv = pinv(G_0(:,WS.weights~=0));
-            if exist('RT','var')
-                Ginv = Ginv*RT;
+            if ~exist('RT','var')
+                RT = speye(size(Ginv,2))*norm(res_0(:,end))/sqrt(size(res_0,1)-1);
             end
+            Ginv = Ginv*RT;
             CovW = Ginv*Ginv';
             if verbosity
                 disp(['wendy iter time=',num2str(toc),'; sparsity=',num2str(length(find(WS.weights))),'; its=',num2str(its)])
@@ -549,7 +553,7 @@ classdef WS_opt < handle
             W_ls = obj.linreg(G_0,b_0,linregargs{:});
             bnds = norm(b_0)./vecnorm(G_0)';
             GW_ls = norm(G_0*W_ls);
-            WS.add_weights(W_ls);
+            WS.add_weights(W_ls,'toggle_cov',1);
             
             proj_cost = []; overfit_cost = []; lossvals = [];
             
@@ -573,7 +577,7 @@ classdef WS_opt < handle
 
             [WS,w_its,res,res_0,CovW] = obj.wendy(WS,vw{:});
 
-            WS.add_weights(WS.weights.*M_diag);
+            WS.add_weights(WS.weights.*M_diag,'toggle_cov',1);
             loss_wsindy = zeros(2,length(lambdas));
             loss_wsindy(1,:) = lossvals;
             loss_wsindy(end,:) = lambdas;
@@ -737,7 +741,7 @@ classdef WS_opt < handle
                     smallinds = smallinds_new;
                     w = WS.weights;
                     w(smallinds) = 0;
-                    WS.add_weights(w);
+                    WS.add_weights(w,'toggle_cov',1);
                     if any(w)
                         [WS,~,~,~,C] = obj.wendy(WS,vw{:});
                         w = WS.weights;
@@ -745,7 +749,7 @@ classdef WS_opt < handle
                         if ~isempty(inds)
                             I = abs(w(inds)) < sqrt(diag(C))/inf;
                             w(inds(I)) = 0;
-                            WS.add_weights(w);
+                            WS.add_weights(w,'toggle_cov',1);
                         end
                     end
                 end

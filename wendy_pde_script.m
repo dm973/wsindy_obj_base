@@ -11,17 +11,17 @@ pde_names = {'burgers.mat',...          %1
     'KS.mat',...                        %7
     'hyperKS.mat',...                   %8
     'lin_schrod.mat',...                %9 %%%
-    'NLS.mat',...                       %10
+    'NLS.mat',...                       %10 %%% bias correct! cov helps a little
     'NLS_long.mat',...                  %11
     'transportDiff.mat',...             %12 
     'advecdiff_exact.mat',...           %13 %%%
-    'AC_temp.mat',...                   %14
-    'fkpp.mat',...                      %15
+    'AC_temp.mat',...                   %14 % - very bad, transitions to another equation?
+    'fkpp_tw.mat',...                   %15 % - very bad, transitions to another equation?
     'sod.mat',...                       %16 %%
     'bw.mat',...                        %17
     'bwEpstar.mat',...                  %18
     'porous2.mat',...                   %19
-    'Sine_Gordon.mat',...               %20
+    'Sine_Gordon.mat',...               %20 %%% bias correct! cov + bias
     'wave2Du3.mat',...                  %21
     'rxn_diff.mat',...                  %22
     'full_or_old/rxn_diff_old.mat',...  %23
@@ -33,7 +33,7 @@ pde_names = {'burgers.mat',...          %1
     '2D_Blast_prat_90_r_equi.mat',...   %29
     };
 
-pde_num = 22; % set to 0 to run on pre-loaded dataset
+pde_num = 5; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
@@ -47,11 +47,11 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-64 -64 -64]);
+Uobj.coarsen([-128 -128 -32]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.2;
+noise_ratio = 0.5;
 rng('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
@@ -78,13 +78,25 @@ if toggle_strong_form==1
 else
     phifun = 'pp';
     tf_meth = 'FFT';
-    tau = 10^-8;
+    tau = 10^-10;
     tauhat = 2;
     tf_param = {[tau tauhat max(x_diffs(:))],[tau tauhat max(lhs(:,end))]};
 
     % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
     % tf_meth = 'timefrac';
-    % tf_param = [0.2 0.2];
+    % tf_param = [0.3 0.2];
+
+    phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
+    tf_meth = 'FFT';
+    tf_param = 2;
+
+    % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
+    % tf_meth = 'direct';
+    % tf_param = [10 13];
+
+    phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
+    tf_meth = 'timefrac';
+    tf_param = [0.15 0.15];
 
     subinds = -3;
 end
@@ -94,11 +106,12 @@ fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
 %% build WSINDy linear system
 tic;
-WS = wendy_model(Uobj,lib,tf,'lhsterms',lhs);
+% WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs,'statcorrect',[0 1]);
+WS = wendy_model(Uobj,lib,tf,[1 1],'lhsterms',lhs);
 
 %% WENDy solve
 
-[WS,w_its,res,res_0,CovW] = WS_opt().wendy(WS,'maxits',20,'ittol',10^-4,'diag_reg',10^-4,'trim_rows',1);
+[WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,'maxits',100,'ittol',10^-4,'diag_reg',10^-inf,'trim_rows',1);
 total_time_wendy = toc;
 
 %% view governing equations, MSTLS loss, learned model accuracy
@@ -120,7 +133,7 @@ if exist('true_nz_weights','var')
     fprintf('\nCoeff err=%1.2e',E2)
 end
 
-% figure(1);clf
+figure(1);
 m = 64;
 colormap([copper(m);cool(m)])
 for j=1:Uobj.nstates
@@ -134,7 +147,7 @@ for j=1:Uobj.nstates
             subplot(Uobj.nstates,2,2*j-1)
             imagesc(Uobj.Uobs{j}(:,:,k))
             subplot(Uobj.nstates,2,2*j)
-            imagesc(U_exact{j}(:,:,k))
+            imagesc(U_exact{j}(:,:,k*floor(length(xs{end})/Uobj.dims(end))))
             drawnow
         end
     end
@@ -148,8 +161,14 @@ disp([' '])
 disp(['rel L2 errs (OLS, WENDy)=',num2str(errs([1 end]))])
 disp(['runtime(s)=',num2str(total_time_wendy)])
 disp(['num its=',num2str(size(w_its,2))])
-disp(['params(true,OLS,WENDy):'])
-disp([w_true w_its(:,[1 end])])
-disp(['rel. param errors(OLS,WENDy):'])
-disp(abs(w_its(:,[1 end]) - w_true)./abs(w_true))
-disp(['-----------------'])
+% disp(['params(true,OLS,WENDy):'])
+% disp([w_true w_its(:,[1 end])])
+% disp(['rel. param errors(OLS,WENDy):'])
+% disp(abs(w_its(:,[1 end]) - w_true)./abs(w_true))
+% disp(['-----------------'])
+
+%%
+
+figure(2);
+w_plot = w_its(:,end);
+plot_wendy;

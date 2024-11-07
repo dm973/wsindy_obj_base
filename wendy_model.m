@@ -4,65 +4,40 @@ classdef wendy_model < wsindy_model
         H
         biasfac
         bias
+        statcorrect
     end
 
     methods
-        function obj = wendy_model(dat,lib,tf,varargin)
-            % written as t2(t1(x))
+        function obj = wendy_model(dat,lib,tf,statcorrect,varargin)
             obj = obj@wsindy_model(dat,lib,tf,varargin{:});
             obj.Hfac = {};
             obj.H = [];
             obj.biasfac = {};
             obj.bias = [];
+            obj.statcorrect = statcorrect;
         end
     end
 
     methods
 
-
-       % build covariance 
         function obj = get_Hfac(obj)
             % disp(['getting covariance factors...'])
-            if ~exist('coarsen','var')
-                coarsen = 1;
-            end
-
-            if isempty(obj.L0)
-                obj.L0 = repmat({cell(obj.numeq,1)},obj.ntraj,1);
-                if obj.toggleH
-                    obj.L1 = repmat({repmat(arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0),obj.nstates,1)},obj.ntraj,1);
-                else
-                    obj.L1 = repmat({arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0)},obj.ntraj,1);
-                end
-            end
+            obj.Hfac = repmat({arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0)},obj.ntraj,1);
             S = obj.get_supp;
-            if isempty(obj.features)
-                obj.get_features;
-            end
             for j=1:obj.ntraj
                 for i=1:obj.numeq
-                    if isempty(obj.L0{j}{i})
-                        grads = obj.lhsterms{i}.diffmat(obj.dat(j));
-                        grads = cell2mat(grads(:)');
-                        V = obj.tf{j}{i}.get_testmat(obj.lhsterms{i}.linOp);
-                        obj.L0{j}{i} = V*grads(:,1:obj.coarsen_L:end);
-                    end
-                    if obj.toggleH
-                        for k=1:length(obj.lib.terms)
-                            if and(ismember(k,S{1}),isempty(obj.L1{j}{i}{k}))
-                                grads = obj.features{i}{ismember(S{1},k)}.diffmat(obj.dat(j));
-                                V = obj.tf{j}{i}.get_testmat(obj.features{i}{ismember(S{1},k)}.linOp);
-                                A = cell2mat(grads(:)');
-                                obj.L1{j}{i}{k} = V*A(:,1:obj.coarsen_L:end);
-                            end
-                        end
-                    else
-                        for k=1:length(obj.lib(i).terms)
-                            if and(ismember(k,S{i}),isempty(obj.L1{j}{i}{k}))
-                                grads = obj.lib(i).terms{k}.diffmat(obj.dat(j));
+                    for k=1:length(obj.lib(i).terms)
+                        if and(ismember(k,S{i}),isempty(obj.Hfac{j}{i}{k}))
+                            hess = obj.lib(i).terms{k}.get_hess;
+                            if any(arrayfun(@(tm)tm.coeff~=0,hess))
+                                hess = arrayfun(@(tm)...
+                                    spdiags(reshape(tm.evalterm(obj.dat(j)),[],1),0,prod(obj.dat(j).dims),prod(obj.dat(j).dims)),...
+                                    hess,'uni',0);
                                 V = obj.tf{j}{i}.get_testmat(obj.lib(i).terms{k}.linOp);
-                                A = cell2mat(grads(:)');
-                                obj.L1{j}{i}{k} = V*A(:,1:obj.coarsen_L:end);
+                                A = cell2mat(hess(:)');
+                                obj.Hfac{j}{i}{k} = V*A;
+                            else
+                                obj.Hfac{j}{i}{k} = sparse(length(obj.bs{1}{i}),prod(obj.dat(j).dims)*obj.nstates^2);
                             end
                         end
                     end
@@ -71,27 +46,48 @@ classdef wendy_model < wsindy_model
             % disp(['completed.'])
         end
 
+        function R = get_H_R(obj)
+            N = obj.nstates;
+            R = sparse(0,0);
+            for n=1:obj.ntraj
+                sigmas = obj.dat(n).estimate_sigma;
+                Rsig = zeros(N^2,N^2);
+                for i=1:N
+                    for j=1:N
+                        for k=1:N
+                            for l=1:N
+                                if all([i==k,j==l,i~=j])
+                                    Rsig((i-1)*N+j,(k-1)*N+l) = sigmas{i}^2*sigmas{j}^2;
+                                elseif all([i==j,j==k,k==l])
+                                    Rsig((i-1)*N+j,(k-1)*N+l) = 2*sigmas{i}^4;
+                                elseif all([i==l,j==k,i~=j])
+                                    Rsig((i-1)*N+j,(k-1)*N+l) = sigmas{i}^2*sigmas{j}^2;
+                                end
+                            end
+                        end
+                    end
+                end
+                Rsig = kron(Rsig,speye(prod(obj.dat(n).dims)));
+                R = blkdiag(R,Rsig);
+            end
+        end
+
         function obj = get_H(obj)
+            obj.get_Hfac;
             w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
             S = obj.get_supp;
-            if obj.toggleH
-                S = repmat(S,1,obj.nstates);
-                w = repmat(w,1,obj.nstates);
-            end
-            obj.L = obj.L0;
+            obj.H = arrayfun(@(s)cell(obj.numeq,1),(1:obj.ntraj)','uni',0);
             for i=1:obj.ntraj
                 for j=1:obj.numeq
-                    for k=1:length(S{j})
-                        obj.L{i}{j} = obj.L{i}{j} - w{j}(S{j}(k))*obj.L1{i}{j}{S{j}(k)};
+                    obj.H{i}{j} = w{j}(S{j}(1))*obj.Hfac{i}{j}{S{j}(1)};
+                    for k=2:length(S{j})
+                        obj.H{i}{j} = obj.H{i}{j} + w{j}(S{j}(k))*obj.Hfac{i}{j}{S{j}(k)};
                     end
                 end
             end
-            obj.L = cellfun(@(L)cell2mat(L),obj.L,'un',0);
-            if obj.multitest == 1
-                obj.L = cell2mat(obj.L);
-            else
-                obj.L = blkdiag(obj.L{:});
-            end
+            obj.H = cellfun(@(L)cell2mat(L),obj.H,'un',0);
+            obj.H = blkdiag(obj.H{:});
+            obj.H = 1/4*(obj.H*(obj.get_H_R*obj.H'));
         end
 
         function obj = get_biasfac(obj)
@@ -101,6 +97,7 @@ classdef wendy_model < wsindy_model
 
             S = obj.get_supp;
             for j=1:obj.ntraj
+                obj.dat(j).get_R0;
                 for i=1:obj.numeq
                     for k=1:length(obj.lib(i).terms)
                         if and(ismember(k,S{i}),isempty(obj.biasfac{j}{i}{k}))
@@ -141,83 +138,63 @@ classdef wendy_model < wsindy_model
         function obj = add_weights(obj,w,varargin)
             IP = inputParser;
             addRequired(IP,'w');
-            addParameter(IP,'toggle_cov',1);
+            addParameter(IP,'toggle_cov',0);
             parse(IP,w,varargin{:});
             w = IP.Results.w;
             toggle_cov = IP.Results.toggle_cov;
             if toggle_cov==1
                 obj.get_cov(w);
-                obj.get_bias;
+                if obj.statcorrect(2)>0
+                    obj.get_bias;
+                else
+                    obj.bias = sparse(length(obj.b{1}),1);
+                end
             else
                 obj.weights = w;
                 obj.get_features;
             end
         end
 
-        function obj = get_cov(obj,w)
-            if obj.multitest == 1
-                obj.dat(1).get_R0;
-                R0 = obj.dat(1).R0(1:obj.coarsen_L:end,1:obj.coarsen_L:end);
-            else
-                R0 = [];
-                for i=1:obj.ntraj
-                    obj.dat(i).get_R0;
-                    R0 = blkdiag(R0,obj.dat(i).R0(1:obj.coarsen_L:end,1:obj.coarsen_L:end));
+        function [G,b,RT] = apply_cov(obj,G,b,diag_reg)
+            if obj.statcorrect(2)==1
+                if isempty(obj.bias)
+                    obj.get_bias;
                 end
+                b = b - obj.bias;
             end
-            if exist('w','var')
-                s_old = obj.get_supp;
-                obj.weights = w;
-                s_new = obj.get_supp;
-                if isempty(obj.L1)
-                    obj.get_Lfac;
+
+            if obj.statcorrect(1)>0
+                if isempty(obj.cov)
+                    obj.get_cov;
+                end
+                if obj.statcorrect(1)>1
+                    obj.get_H;
+                    R_temp = obj.cov + obj.H;
                 else
-                    if ~isempty(s_old)
-                        if ~all(cellfun(@(so,sn)all(ismember(sn,so)),s_old,s_new))                     
-                            obj.get_Lfac;
+                    R_temp = obj.cov;
+                end
+                check = 0;
+                while check == 0
+                    try
+                        RT = R_temp + (diag_reg/(1-diag_reg)*mean(diag(R_temp)))*speye(size(obj.cov,1));
+                        RT = chol( RT )';
+                        RT = sqrt(1-diag_reg)*RT;
+                        check = 1;
+                    catch
+                        if diag_reg==0
+                            diag_reg=10^-16;
+                        else
+                            diag_reg = diag_reg*10;
                         end
-                    else
-                        obj.get_Lfac;    
+                        fprintf('\nincreasing Cov regularization to %0.2e\n',diag_reg)
                     end
                 end
-                toggle_compute = 1;
-            elseif and(~isempty(obj.weights),isempty(obj.cov))
-                obj.get_Lfac;
-                toggle_compute = 1;
+                G = RT \ G;
+                b = RT \ b;
             else
-                toggle_compute = 0;
-            end
-            if toggle_compute
-                if any(obj.weights)
-                    obj.get_L;
-                    obj.cov = (obj.L*R0)*(obj.L');
-                else
-                    obj.cov = speye(sum(cellfun(@(LS) sum(cellfun(@(L)size(L,1),LS)), obj.L0)));
-                end
+                RT = speye(length(b),length(b))*norm(obj.res)/sqrt(length(b)-1);
             end
         end
-
-        function [G,b,RT] = apply_cov(obj,G,b,diag_reg)
-            if isempty(obj.cov)
-                obj.get_cov;
-            end
-            if isempty(obj.bias)
-                obj.get_bias;
-            end
-            check = 0;
-            while check == 0
-                try
-                    RT = obj.cov + (diag_reg/(1-diag_reg)*mean(diag(obj.cov)))*speye(size(obj.cov,1));
-                    RT = chol( RT )';
-                    RT = sqrt(1-diag_reg)*RT;
-                    check = 1;
-                catch
-                    diag_reg = diag_reg*10;
-                    fprintf('\nincreasing Cov regularization to %0.2e\n',diag_reg)
-                end
-            end
-            G = RT \ G;
-            b = RT \ (b - obj.bias);
-        end
+    
     end
 end

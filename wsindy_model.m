@@ -102,10 +102,10 @@ classdef wsindy_model < handle
                 obj.lib = repelem(obj.lib,1,obj.numeq);
             end
 
-            if isequal(class(tf),'testfcn')
+            if or(isequal(class(tf),'testfcn'),ismember('testfcn',superclasses(tf)))
                 obj.tf = repelem({repelem({tf},1,obj.numeq)},obj.ntraj,1);
             elseif isequal(class(tf),'cell')
-                if isequal(class(tf{1}),'testfcn')
+                if or(isequal(class(tf{1}),'testfcn'),ismember('testfcn',superclasses(tf{1})))
                     if length(tf)==obj.numeq
                         obj.tf = repelem({tf},obj.ntraj,1);
                     elseif length(tf)==obj.ntraj
@@ -232,7 +232,7 @@ classdef wsindy_model < handle
         function obj = add_weights(obj,w,varargin)
             IP = inputParser;
             addRequired(IP,'w');
-            addParameter(IP,'toggle_cov',1);
+            addParameter(IP,'toggle_cov',0);
             parse(IP,w,varargin{:});
             w = IP.Results.w;
             toggle_cov = IP.Results.toggle_cov;
@@ -452,7 +452,7 @@ classdef wsindy_model < handle
             end
         end
 
-        function obj = get_cov(obj,w)
+        function R0 = get_R0(obj)
             if obj.multitest == 1
                 obj.dat(1).get_R0;
                 R0 = obj.dat(1).R0(1:obj.coarsen_L:end,1:obj.coarsen_L:end);
@@ -463,6 +463,10 @@ classdef wsindy_model < handle
                     R0 = blkdiag(R0,obj.dat(i).R0(1:obj.coarsen_L:end,1:obj.coarsen_L:end));
                 end
             end
+        end
+
+        function obj = get_cov(obj,w)
+            R0 = obj.get_R0;
             if exist('w','var')
                 s_old = obj.get_supp;
                 obj.weights = w;
@@ -497,7 +501,7 @@ classdef wsindy_model < handle
                     %     end
                     % else
                         obj.get_L;
-                        obj.cov = (obj.L*R0)*(obj.L');
+                        obj.cov = obj.L*(R0*obj.L');
                     % end
                 else
                     obj.cov = speye(sum(cellfun(@(LS) sum(cellfun(@(L)size(L,1),LS)), obj.L0)));
@@ -524,7 +528,6 @@ classdef wsindy_model < handle
             G = RT \ G;
             b = RT \ b;
         end
-
 
         % row trimming
 
@@ -568,14 +571,12 @@ classdef wsindy_model < handle
             obj.cat_Gb;
         end
 
-
-
         % performance metrics
         function res = res(obj,meth)
             if ~exist('meth','var')
                 if ~isempty(obj.weights)
                     % res = cat(1,obj.b{:}) - cat(1,obj.G{:})*obj.weights;
-                    res = (cell2mat(obj.b) - blkdiag(obj.G{:})*obj.weights)/norm(cell2mat(obj.b));
+                    res = (cell2mat(obj.b) - blkdiag(obj.G{:})*obj.weights);
                 else
                     res = [];
                 end
