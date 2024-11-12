@@ -72,7 +72,7 @@ classdef wsindy_model < handle
                 obj.lhsterms = arrayfunvec(obj.lhsterms,@(L)term('ftag',L(1:obj.nstates),'linOp',L(obj.nstates+1:end)),2,0);
             elseif isequal(class(obj.lhsterms),'diffOp')
                 obj.lhsterms = num2cell(obj.lhsterms);
-            elseif isequal(class(obj.lhsterms),'term')
+            elseif any(cellfun(@(x) isequal(x,'term'),superclasses(obj.lhsterms)))
                 obj.lhsterms = num2cell(obj.lhsterms);
             end
 
