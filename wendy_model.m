@@ -195,6 +195,36 @@ classdef wendy_model < wsindy_model
                 RT = speye(length(b),length(b))*norm(obj.res)/sqrt(length(b)-1);
             end
         end
-    
+   
+        function A = apply_gradC(obj,v)
+            R0 = obj.get_R0;
+            w = R0*(obj.L'*v);
+            v_cell = obj.vec2cell(v,cellfun(@(b)length(b),obj.bs{1}));
+            S = obj.get_supp;
+            A = obj.G{1}*0;
+            indc = 1;
+            indr = 1;
+            for j=1:obj.numeq
+                for k=1:length(S{j})
+                    A(:,indc) = obj.L*(R0*(obj.L1{1}{j}{S{j}(k)}'*v_cell{j}));
+                    foo = obj.L1{1}{j}{S{j}(k)}*w;
+                    A(indr:indr+length(foo)-1, indc) = A(indr:indr+length(foo)-1, indc) + foo;
+                    indc = indc+1;
+                end
+                indr = indr + length(v_cell{j});
+            end
+        end
+
+        function w_cell = vec2cell(obj,w,length_vec)
+            ind=1;
+            numeq = length(length_vec);
+            w_cell = cell(numeq,1);
+            for nn=1:numeq
+                w_cell{nn} = w(ind:ind+length_vec(nn)-1);
+                ind = ind+length_vec(nn);
+            end
+        end
+
+
     end
 end

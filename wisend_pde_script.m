@@ -33,7 +33,7 @@ pde_names = {'burgers.mat',...          %1 bias=0
     '2D_Blast_prat_90_r_equi.mat',...   %29 
     };
 
-pde_num = 16; % set to 0 to run on pre-loaded dataset
+pde_num = 7; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
@@ -47,11 +47,10 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-64*[1 1] -48]);
-fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
+Uobj.coarsen([-128*[1 1] -48]);
 
 %%% add noise
-noise_ratio = 0.5;
+noise_ratio = 0.2;
 rng('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
@@ -64,9 +63,28 @@ numeq = size(lhsterms,1);
 
 %% get library
 
-[lib,true_S] = true_lib(nstates,true_nz_weights(eqs));
-x_diffs = cell2mat(true_nz_weights');
-x_diffs = x_diffs(:,nstates+1:end-2);
+[lib_true,true_S] = true_lib(nstates,true_nz_weights(eqs));
+
+%% get library
+use_true = 0; % use pre-loaded terms
+
+%%% differential operators
+x_diffs = [0:4];
+
+%%% poly/trig functions
+polys = [0:4];
+trigs = [];
+
+%%% custom terms
+custom_terms = {};
+
+if ~use_true==1
+    [lib,true_S] = trig_poly_lib(polys,trigs,x_diffs,nstates,Uobj.ndims,numeq,true_nz_weights);
+    lib = repelem(lib,1,numeq);
+    if ~isempty(custom_terms); for j=1:numeq; lib(j).add_terms(custom_terms{j}); end;end
+else
+    [lib,true_S] = true_lib(nstates,true_nz_weights);
+end
 
 %% get test function
 
@@ -98,11 +116,10 @@ else
     % tf_meth = 'timefrac';
     % tf_param = 0.1;
 
-    subinds = -3;
+    subinds = -4;
 end
 tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
     'meth',tf_meth,'param',tf_param,'stateind',find(lhs(i,1:nstates),1)),(1:size(lhs,1))','uni',0);
-fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
 %% build WSINDy linear system
 tic;
@@ -111,7 +128,23 @@ WS = wendy_model(Uobj,lib,tf,[1 1],'lhsterms',lhs);
 
 %% WENDy solve
 
-[WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,'maxits',100,'ittol',10^-4,'diag_reg',10^-inf,'trim_rows',1);
+toggle_wendy = 1;
+
+MSTLS_args = {'lambda',10.^linspace(-4,0,100)};
+WENDy_args = {'maxits_wendy',2,'diag_reg',10^-inf,'verbose',1};
+MSTLS_WENDy_args = {'cov_thresh',0.5};
+
+if toggle_wendy==0
+    [WS,loss_wsindy,its,G,b] =  WS_opt().MSTLS(WS,MSTLS_args{:});
+    w_its = WS.weights;
+    res = WS.G{1}*WS.weights-WS.b{1};    
+    res_0 = res;
+    CovW = rms(res)^2*inv(WS.G{1}(:,WS.weights~=0)'*WS.G{1}(:,WS.weights~=0));
+elseif toggle_wendy==1
+    [WS,loss_wsindy,lambda,w_its,res,res_0,CovW,RT] =  WS_opt().MSTLS_WENDy(WS,WENDy_args{:},MSTLS_args{:},MSTLS_WENDy_args{:});
+    disp(['wendy its at optimal lambda=',num2str(size(w_its,2))])
+end
+
 total_time_wendy = toc;
 
 %% view governing equations, MSTLS loss, learned model accuracy
@@ -120,6 +153,9 @@ for j=1:numeq
     fprintf('\n----------Eq %u----------\n',j)
     cellfun(@(s)fprintf('%s\n',s),Str_mod{j})
 end
+
+fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
+fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
 if exist('true_nz_weights','var')
     w_true = arrayfun(@(L)zeros(length(L.terms),1),WS.lib(:),'Un',0);
@@ -167,8 +203,19 @@ disp(['num its=',num2str(size(w_its,2))])
 % disp(abs(w_its(:,[1 end]) - w_true)./abs(w_true))
 % disp(['-----------------'])
 
-%%
+%% plot wendy results
 
 figure(2);
 w_plot = w_its(:,end);
 plot_wendy;
+
+%% plot loss
+
+figure(3);clf;
+f = min(loss_wsindy(1,:));
+g = min(loss_wsindy(2,loss_wsindy(1,:)==f));
+for j=1:size(loss_wsindy,1)-1
+    loglog(loss_wsindy(end,:),loss_wsindy(j,:),'o-',g,f,'rx')
+    hold on
+end
+hold off

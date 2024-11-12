@@ -501,7 +501,98 @@ classdef WS_opt < handle
             end
         end
 
-        function [WS,loss_wsindy,lambda,w_its,res,res_0,CovW] = MSTLS_WENDy(obj,WS,varargin)
+        function [WS,w_its,res,res_0,CovW,RT] = wendy2(obj,WS,varargin)
+            % options: maxits,ittol,diag_reg,w,regmeth
+
+            default_maxits = 20;
+            default_ittol = 10^-4;
+            default_diag_reg = 10^-6;
+            default_w = WS.weights;
+            default_regmeth = 'ols';
+
+            p = inputParser;
+            addRequired(p,'WS');
+            addParameter(p,'maxits',default_maxits);
+            addParameter(p,'trim_rows',0);
+            addParameter(p,'ittol',default_ittol);
+            addParameter(p,'diag_reg',default_diag_reg);
+            addParameter(p,'w',default_w);
+            addParameter(p,'regmeth',default_regmeth);
+            addParameter(p,'verbose',0);
+            addParameter(p,'linregargs',{});
+            parse(p,WS,varargin{:})
+
+            maxits = p.Results.maxits;
+            ittol = p.Results.ittol;
+            obj.diag_reg = p.Results.diag_reg;
+            w = p.Results.w;
+            regmeth = p.Results.regmeth;
+            verbosity = p.Results.verbose;
+            linregargs = p.Results.linregargs;
+            tr = p.Results.trim_rows;
+
+            if verbosity
+                tic,
+            end
+
+            if ~isempty(w)
+                if isequal(w,0)
+                    WS = obj.ols(WS,'S',0,'linregargs',linregargs);                    
+                else
+                    WS.add_weights(w,'toggle_cov',1);
+                end
+            else
+                WS = obj.ols(WS,'linregargs',linregargs);
+            end
+
+            if tr>1
+                WS.get_Lfac;
+                WS.trim_rows('trim_factor',tr);
+            end
+            
+            check = 1;
+            sparse_inds = WS.weights~=0;
+            w_its = WS.weights;
+            res_0 = [];
+            res = [];
+            its = 0;
+            WS.cat_Gb('cat','blkdiag');
+            G_0 = WS.G{1};
+            b_0 = WS.b{1};
+
+            while and(check,its<maxits)
+                if isequal(regmeth,'ols')
+                    [G,b,RT] = WS.apply_cov(G_0(:,sparse_inds),b_0,obj.diag_reg);
+
+                    v = RT \ (G*WS.weights-b);
+                    A = G - (2*RT) \ WS.apply_gradC(v);
+
+                    w = obj.linreg(A'*G,A'*b,linregargs{:},'S',sparse_inds);
+                    WS.add_weights(w,'toggle_cov',1);
+                end
+
+                w_its = [w_its WS.weights];
+                check = norm(diff(w_its(:,end-1:end),[],2))/norm(w_its(:,end-1))>ittol;
+
+                res_0 = [res_0 G_0(:,sparse_inds)*w_its(sparse_inds,end)-b_0];
+
+                res = [res G*w_its(sparse_inds,end)-b];
+                its = size(w_its,2)-1;
+            end
+            
+            % CovW = inv(G'*G);
+            Ginv = pinv(G_0(:,WS.weights~=0));
+            if ~exist('RT','var')
+                RT = speye(size(Ginv,2))*norm(res_0(:,end))/sqrt(size(res_0,1)-1);
+            end
+            Ginv = Ginv*RT;
+            CovW = Ginv*Ginv';
+            if verbosity
+                disp(['wendy iter time=',num2str(toc),'; sparsity=',num2str(length(find(WS.weights))),'; its=',num2str(its)])
+            end
+        end
+
+        function [WS,loss_wsindy,lambda,w_its,res,res_0,CovW,RT] = MSTLS_WENDy(obj,WS,varargin)
 
             default_lambdas = 10.^linspace(-4,0,100);
             default_maxits = inf;
@@ -517,7 +608,10 @@ classdef WS_opt < handle
             addParameter(p,'maxits',default_maxits);
             addParameter(p,'alpha',default_alpha);
             addParameter(p,'M_diag',ones(sum(arrayfun(@(L)length(L.terms),WS.lib)),1));
-            
+
+            %%%% MSTLS params
+            addParameter(p,'cov_thresh',0);
+
             %%%% wendy params
             addRequired(p,'WS');
             addParameter(p,'maxits_wendy',default_maxits_wendy);
@@ -534,6 +628,7 @@ classdef WS_opt < handle
             M_diag =  p.Results.M_diag;
             linregargs = p.Results.linregargs;
             
+            cov_thresh = p.Results.cov_thresh;
 
             maxits_wendy = p.Results.maxits_wendy;
             ittol = p.Results.ittol;
@@ -560,7 +655,7 @@ classdef WS_opt < handle
             Wmat = zeros(length(W_ls),length(lambdas));
             for l=1:length(lambdas)
                 WS.weights = W_ls;
-                [WS,its] = obj.sparsifyDynamics_wendy(WS,lambdas(l),M_diag,bnds,maxits,vw);
+                [WS,its] = obj.sparsifyDynamics_wendy(WS,lambdas(l),M_diag,bnds,maxits,cov_thresh,vw);
                 proj_cost = [proj_cost alpha*norm(G_0*(WS.weights-W_ls))/GW_ls];
                 overfit_cost = [overfit_cost (1-alpha)*length(find(WS.weights))/length(W_ls)];
                 lossvals = [lossvals proj_cost(end) + overfit_cost(end)];
@@ -575,7 +670,7 @@ classdef WS_opt < handle
             %     WS.weights = Wmat(:,l);
             % end
 
-            [WS,w_its,res,res_0,CovW] = obj.wendy(WS,vw{:});
+            [WS,w_its,res,res_0,CovW,RT] = obj.wendy(WS,vw{:});
 
             WS.add_weights(WS.weights.*M_diag,'toggle_cov',1);
             loss_wsindy = zeros(2,length(lambdas));
@@ -727,7 +822,7 @@ classdef WS_opt < handle
             semilogx(lambdas,lossvals)
         end
 
-        function [WS,its] = sparsifyDynamics_wendy(obj,WS,lambda,M,bnds,maxits,vw)
+        function [WS,its] = sparsifyDynamics_wendy(obj,WS,lambda,M,bnds,maxits,cov_thresh,vw)
             LBs = lambda*max(1./M,bnds);
             UBs = 1/lambda*min(1./M,bnds);
             smallinds = WS.weights*0;
@@ -747,7 +842,7 @@ classdef WS_opt < handle
                         w = WS.weights;
                         inds = find(w);
                         if ~isempty(inds)
-                            I = abs(w(inds)) < sqrt(diag(C))/inf;
+                            I = abs(w(inds)) < sqrt(diag(C))*cov_thresh;
                             w(inds(I)) = 0;
                             WS.add_weights(w,'toggle_cov',1);
                         end

@@ -16,7 +16,7 @@ odes={'cubic_longtime.mat', ...
     'lorenz_longtime.mat',...
     'lotka_longtime.mat',...
     'vanderpol_longtime.mat'};
-filename = odes{4};
+filename = odes{1};
 load([dr,filename],'t','x','weights');
 w_true = cell2mat(cellfun(@(w)w(:,end),weights(:),'uni',0));
 true_prod_tags = cellfun(@(w)w(:,1:end-1),weights,'uni',0);
@@ -124,10 +124,9 @@ fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
 %% build WSINDy linear system
 tic;
-WS = wendy_model(Uobj,lib,tf,[1 1],'lhsterms',lhsterms);
+WS = wendy_model(Uobj,lib,tf,[2 1],'lhsterms',lhsterms);
 
 %% solve
-
 [WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,'maxits',100,'ittol',10^-4,'diag_reg',10^-inf,'trim_rows',1);
 total_time_wendy = toc;
 
