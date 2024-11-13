@@ -128,6 +128,8 @@ classdef testfcn < handle
                 Cfsinds = L.difftags;
                 obj = obj.add_difftags(Cfsinds);
                 vec = obj.op(term.evalterm(dat),Cfsinds);
+            elseif isequal(class(term),'addterm')
+                vec = obj.test(dat,term.t1)+obj.test(dat,term.t2);
             elseif isempty(term.linOp)
                 Cfsinds = zeros(obj.ndims,1);
                 obj = obj.add_difftags(Cfsinds);
