@@ -70,9 +70,7 @@ classdef wsindy_model < handle
                 obj.lhsterms = arrayfun(@(i)term('ftag',E(i,:),'linOp',[zeros(1,obj.ndims-1) 1]),(1:obj.nstates)','uni',0);
             elseif isequal(class(obj.lhsterms),'double')
                 obj.lhsterms = arrayfunvec(obj.lhsterms,@(L)term('ftag',L(1:obj.nstates),'linOp',L(obj.nstates+1:end)),2,0);
-            elseif isequal(class(obj.lhsterms),'diffOp')
-                obj.lhsterms = num2cell(obj.lhsterms);
-            elseif any(cellfun(@(x) isequal(x,'term'),superclasses(obj.lhsterms)))
+            elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(obj.lhsterms)))
                 obj.lhsterms = num2cell(obj.lhsterms);
             end
 
