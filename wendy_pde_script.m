@@ -33,7 +33,7 @@ pde_names = {'burgers.mat',...          %1 bias=0
     '2D_Blast_prat_90_r_equi.mat',...   %29 
     };
 
-pde_num = 16; % set to 0 to run on pre-loaded dataset
+pde_num = 23; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
@@ -47,11 +47,11 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-64*[1 1] -48]);
+Uobj.coarsen([-52 -52 -64]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.1;
+noise_ratio = 0.25;
 rng('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
@@ -88,17 +88,17 @@ else
 
     phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
     tf_meth = 'FFT';
-    tf_param = 3;
+    tf_param = max(max(x_diffs)-1,2);
 
-    % phifun = @(v)exp(-9*[1./(1-v.^2)aa-1]);
+    % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
     % tf_meth = 'direct';
-    % tf_param = [10 13];
+    % tf_param = [14 12];
 
     % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
     % tf_meth = 'timefrac';
-    % tf_param = 0.1;
+    % tf_param = 0.15;
 
-    subinds = -3;
+    subinds = -(5-Uobj.ndims);
 end
 tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
     'meth',tf_meth,'param',tf_param,'stateind',find(lhs(i,1:nstates),1)),(1:size(lhs,1))','uni',0);
@@ -133,6 +133,8 @@ if exist('true_nz_weights','var')
     fprintf('\nCoeff err=%1.2e',E2)
 end
 
+toggle_plot = 1;
+if toggle_plot
 figure(1);
 m = 64;
 colormap([copper(m);cool(m)])
@@ -147,10 +149,11 @@ for j=1:Uobj.nstates
             subplot(Uobj.nstates,2,2*j-1)
             imagesc(Uobj.Uobs{j}(:,:,k))
             subplot(Uobj.nstates,2,2*j)
-            imagesc(U_exact{j}(:,:,k*floor(length(xs{end})/Uobj.dims(end))))
+            imagesc(U_exact{j}(:,:,1+(k-1)*ceil(length(xs{end})/Uobj.dims(end))))
             drawnow
         end
     end
+end
 end
 
 %%% display results
