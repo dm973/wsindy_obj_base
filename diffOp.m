@@ -272,11 +272,11 @@ classdef diffOp < linearOp
                     k_x = dat.ks(i);
                     dv = mean(diff(dat.grid{i}));
                     [phi,phip] = optTFcos(3,0);
-                    if isempty(obj.w)
+                    % if isempty(obj.w)
                         tauhat = 1+dat.dims(i)^(1/3)*sigest{obj.stateind};
                         obj.w = get_tf_support(phi, dat.dims(i), tauhat, k_x);
                         obj.w = max(4,obj.w);
-                    end
+                    % end
                     xf = linspace(-1,1,2*obj.w+1);
                     Cfs = zeros(2,2*obj.w+1);
                     Cfs(1,:) = phi(xf);
@@ -291,7 +291,7 @@ classdef diffOp < linearOp
                     else
                         V = obj.antisymconvmtx(Cfs(1,:)/norm(Cfs(1,:),1),dat.dims(i));
                     end
-                    c = 0.00001/(0.1+sigest{obj.stateind});
+                    c = 10^-8/(0.1+sigest{obj.stateind});
                     Localderiv = obj.antisymconvmtx(flipud(c_fd(:,2)),dat.dims(i));
                     regmat1 = (max(sigest{obj.stateind},10^-6)/norm(Localderiv(1,:),1))*Localderiv;
                     regmat2 = c*speye(dat.dims(i));
