@@ -33,7 +33,7 @@ pde_names = {'burgers.mat',...          %1 bias=0
     '2D_Blast_prat_90_r_equi.mat',...   %29 
     };
 
-pde_num = 23; % set to 0 to run on pre-loaded dataset
+pde_num = 13; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
@@ -47,12 +47,13 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-52 -52 -64]);
+Uobj.trimend(1000,2);
+Uobj.coarsen([-30 -30 -50]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.25;
-rng('shuffle') % comment out to reproduce results
+noise_ratio = 1;
+rng(1) % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
 
@@ -137,7 +138,8 @@ toggle_plot = 1;
 if toggle_plot
 figure(1);
 m = 64;
-colormap([copper(m);cool(m)])
+% colormap([copper(m);cool(m)])
+colormap(bone(m))
 for j=1:Uobj.nstates
     if Uobj.ndims==2
         subplot(Uobj.nstates,2,2*j-1)

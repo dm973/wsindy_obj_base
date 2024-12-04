@@ -1,20 +1,20 @@
 %% load data
 
-runs = 100;
+runs = 25;
 nzs = [0.01 0.05 0.1 0.15 0.2 0.25 0.5];
-tf_params = {{'meth','FFT','param',3}};
-pde_nums = 7;
+tf_params = {{'meth','FFT','param',2}};
+pde_nums = 19;
 coarse_param = [64 64 92 52 128 64 100 100 52 48 120 48 36 64 46 64];
-subinds = -3;
+subinds = -2;
 eqs = ':';
-cov_params = [1 0];
+cov_params = [1 1];
 wendy_params = {'maxits',100,'ittol',10^-4,'diag_reg',10^-inf,'trim_rows',1};
 phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
 
 for ll =1:length(pde_nums) 
     pde_num = pde_nums(ll);
     % cg = -coarse_param(pde_nums(ll))*[1 1 1];
-    cg = [-64 -64 -64];
+    cg = [-30 -30 -50];
     rng(1);
     run_rng = randi(10^9,100,1);
     stats = cell(length(nzs),length(tf_params),runs);
@@ -29,7 +29,7 @@ for ll =1:length(pde_nums)
         noise_ratio = nzs(ii);
         for jj=1:length(tf_params)
             tf_param = tf_params{jj};
-            parfor rr = 1:runs
+            for rr = 1:runs
                 rng_seed = run_rng(rr);                
                 %%% get wsindy_data object
                 
@@ -38,6 +38,7 @@ for ll =1:length(pde_nums)
                 nstates = Uobj.nstates;
                 
                 %%% coarsen data
+                Uobj.trimend(1000,2);
                 Uobj.coarsen(cg);
                 
                 %%% add noise
@@ -95,7 +96,7 @@ end
 cap = [10^-4,10^2];
 cov_params = [1 1];
 pde_names_script;
-for pde_num = 3:16
+for pde_num = 16
     try
         pde_name = pde_names{pde_num};
         dt = '07-Nov-2024';
@@ -161,3 +162,66 @@ end
 end
 grid on
 saveas(gcf,['~/Desktop/cov2_sweep_',strrep(pde_name,'.mat',''),num2str(ind),'.png'])
+
+%%
+
+
+
+figure(1)
+clf
+y_w=mean(errs_w,3);
+y_0=mean(errs_0,3);
+plot(nzs(i:end),y_0,'o-',nzs(i:end),y_w,'o-.','linewidth',3)
+hold on
+grid on
+set(gca,'fontsize',12,'ylim',[0 max([y_w;y_0])],'xlim',[nzs([i end])])
+legend('OLS','WENDy','location','nw')
+xlabel('\sigma_{NR}')
+ylabel('E_2')
+
+%%
+
+flz = {'sod_11sweep_26-Nov-2024','KS_11sweep_24-Nov-2024',...
+    'advecdiff_exact_11sweep_26-Nov-2024',...
+    'NLS_long_11sweep_26-Nov-2024',...
+    'Sine_Gordon_11sweep_26-Nov-2024',...
+    'porous2_11sweep_26-Nov-2024'};
+clz = {'r','b','c','g','k','m'};
+i=2;
+figure(2);clf
+figure(1);clf
+for ds = 1:length(flz)
+    load(['~/Dropbox/Boulder/research/data/WENDy_PDE/',flz{ds},'.mat'])
+    true_vec = cell2mat(cellfun(@(x)x(:,end),true_nz_weights(:),'uni',0));
+    errs_0 = cellfun(@(s)norm(s{1}(:,1)-true_vec)/norm(true_vec),stats(i:end,:,:));
+    errs_w = cellfun(@(s)norm(s{1}(:,end)-true_vec)/norm(true_vec),stats(i:end,:,:));
+    med_decrease = 1-errs_w./errs_0;
+    y_w=median(errs_w,3);
+    y_0=median(errs_0,3);
+    y_dec = 1-y_w./y_0;
+    figure(1)
+    semilogy(nzs(i:end),y_0,[clz{ds},'o-.'],nzs(i:end),y_w,[clz{ds},'o-'],'linewidth',3)
+    hold on
+    figure(2)
+    plot(nzs(i:end),y_dec,[clz{ds},'o-'],'linewidth',3)
+    hold on
+end
+
+figure(1)
+set(gca,'fontsize',12,'ylim',[0 1],'xlim',[nzs([i end])])
+legend('OLS','WENDy','location','se')
+xlabel('\sigma_{NR}')
+ylabel('E_2')
+grid on
+set(gcf,'position',[133+600   444   544   324])
+% saveas(gcf,'/home/danielmessenger/Dropbox/docs/LANL/Presentations/charmnet_2024/figures/wendy_pde_E2.png')
+figure(2)
+set(gca,'fontsize',12,'ylim',[0 1],'xlim',[nzs([i end])])
+legend(cellfun(@(fl) fl(1:strfind(fl,'_')-1),flz,'uni',0),'location','best')
+xlabel('\sigma_{NR}')
+ylabel('% decrease')
+grid on
+set(gcf,'position',[133   444   544   324])
+% saveas(gcf,'/home/danielmessenger/Dropbox/docs/LANL/Presentations/charmnet_2024/figures/wendy_pde_E2per.png')
+
+% grid on
