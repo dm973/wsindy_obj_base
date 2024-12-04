@@ -137,6 +137,10 @@ classdef diffOp < linearOp
                     obj.Dmats = obj.wfMats(dat);
                 elseif isequal(obj.meth,'wffd')
                     obj.Dmats = obj.wffdMats(dat);
+                elseif isequal(obj.meth,'gb')
+                    obj.Dmats = obj.get_glob(dat);
+                elseif isequal(obj.meth,'lb')
+                    obj.Dmats = obj.get_loc_lsq(dat);
                 end
             end
         end
@@ -273,7 +277,7 @@ classdef diffOp < linearOp
                     dv = mean(diff(dat.grid{i}));
                     [phi,phip] = optTFcos(3,0);
                     % if isempty(obj.w)
-                        tauhat = 1+dat.dims(i)^(1/3)*sigest{obj.stateind};
+                        tauhat = 6;%+dat.dims(i)^(1/2)*sigest{obj.stateind};
                         obj.w = get_tf_support(phi, dat.dims(i), tauhat, k_x);
                         obj.w = max(4,obj.w);
                     % end
@@ -285,15 +289,17 @@ classdef diffOp < linearOp
                         phip = matlabFunction(diff(phi(y),obj.difftags(i)));
                     end
                     Cfs(2,:) = phip(xf)*(obj.w*dv).^-obj.difftags(i);
-                    Vp = obj.antisymconvmtx(Cfs(2,:)/norm(Cfs(1,:),1),dat.dims(i));
+                    % Cfs = Cfs*dv;
+                    Vp = obj.antisymconvmtx(Cfs(2,:)/norm(Cfs(2,:),2),dat.dims(i));
                     if mod(obj.difftags(i),2)==1
-                        V = obj.symconvmtx(Cfs(1,:)/norm(Cfs(1,:),1),dat.dims(i));
+                        V = obj.symconvmtx(Cfs(1,:)/norm(Cfs(2,:),2),dat.dims(i));
                     else
-                        V = obj.antisymconvmtx(Cfs(1,:)/norm(Cfs(1,:),1),dat.dims(i));
+                        V = obj.antisymconvmtx(Cfs(1,:)/norm(Cfs(2,:),2),dat.dims(i));
                     end
-                    c = 10^-8/(0.1+sigest{obj.stateind});
+                    c = 10^-4/(0.1+sigest{obj.stateind});
+                    c = c/norm(Dmats_fd{i}(p_loc+1,:),2);
                     Localderiv = obj.antisymconvmtx(flipud(c_fd(:,2)),dat.dims(i));
-                    regmat1 = (max(sigest{obj.stateind},10^-6)/norm(Localderiv(1,:),1))*Localderiv;
+                    regmat1 = dv*sigest{obj.stateind}^2*Localderiv;
                     regmat2 = c*speye(dat.dims(i));
                     Bmat1 = sparse(dat.dims(i),dat.dims(i));
                     Bmat2 = c*Dmats_fd{i};
@@ -353,12 +359,13 @@ classdef diffOp < linearOp
 %             Cfs = Cfs/norm(Cfs(1,:),1);
         end
 
-        function Localderiv = get_loc(obj,p,x,varargin)
+        function Localderiv = get_loc(obj,dat,varargin)
+            M = dat.dim(1);
             inp = inputParser;
-            addRequired(inp,'p');
-            addRequired(inp,'x');
+            addRequired(inp,'dat');
+            addParameter(inp,'p',ceil(1/4*M/2));
             addParameter(inp,'basis','poly');
-            parse(inp,p,x,varargin{:})
+            parse(inp,dat,varargin{:})
         
             if isequal(inp.Results.basis,'poly')
                 Phi = arrayfun(@(j)@(x)x.^j,0:p,'uni',0);
@@ -374,7 +381,7 @@ classdef diffOp < linearOp
                 Phip = [arrayfun(@(j)@(x)-j*sin(j*x),0:floor(p/2),'uni',0),arrayfun(@(j)@(x)j*cos(j*x),1:ceil(p/2),'uni',0)];
             end
             
-            M = length(x);
+            x = dat.grid{1};
             xlocal = x(1:p+1);
             xc = x(p/2+1);
         
@@ -386,6 +393,53 @@ classdef diffOp < linearOp
             % Localderiv = spdiags(repmat(w(:)',M,1),[0:p],M,M+p);
         end
 
+        function [Globalderiv,Proj_mat,Phi_mat] = get_glob(obj,dat,varargin)
+            M = dat.dims(1);
+            inp = inputParser;
+            addRequired(inp,'dat');
+            addParameter(inp,'p',ceil(1/4*M/2));
+            addParameter(inp,'basis','trig');
+            parse(inp,dat,varargin{:})
+
+            p = inp.Results.p;
+        
+            if isequal(inp.Results.basis,'poly')
+                Phi = arrayfun(@(j)@(x)x.^j,0:p,'uni',0);
+                Phip = arrayfun(@(j)@(x)j*x.^max(j-1,0),0:p,'uni',0);
+            elseif isequal(inp.Results.basis,'sine')
+                Phi = arrayfun(@(j)@(x)sin(j*x),1:p+1,'uni',0);
+                Phip = arrayfun(@(j)@(x)j*cos(j*x),1:p+1,'uni',0);
+            elseif isequal(inp.Results.basis,'cos')
+                Phi = arrayfun(@(j)@(x)cos(j*x),0:p,'uni',0);
+                Phip = arrayfun(@(j)@(x)-j*sin(j*x),0:p,'uni',0);
+            elseif isequal(inp.Results.basis,'trig')
+                Phi = [arrayfun(@(j)@(x)cos(j*x),0:floor(p/2),'uni',0),arrayfun(@(j)@(x)sin(j*x),1:ceil(p/2),'uni',0)];
+                Phip = [arrayfun(@(j)@(x)-j*sin(j*x),0:floor(p/2),'uni',0),arrayfun(@(j)@(x)j*cos(j*x),1:ceil(p/2),'uni',0)];
+            end
+
+            x = dat.grid{1};
+                
+            %%% get proj mat
+            Phi_mat = cell2mat(cellfun(@(phi)phi(x(:)),Phi,'uni',0));
+            Phip_mat = cell2mat(cellfun(@(phi)phi(x(:)),Phip,'uni',0));
+            Pinv = pinv(Phi_mat);
+            Globalderiv = {Phip_mat*Pinv};
+            Proj_mat = Phi_mat*Pinv;
+        end
+
+        function [Mat,Proj_mat] = get_loc_lsq(obj,dat,varargin)
+
+            lp_deg = 2; % local poly basis degree
+            dat.getcorners;
+            m = ceil(geomean(dat.dims./dat.ks*lp_deg/2)); % half-width of lp stencil
+
+            x = dat.grid{1}(1:2*m+1);
+            M = dat.dims(1);
+            [Globalderiv,Proj_mat] = obj.get_glob(wsindy_data(x*0,x),varargin{:},'p',lp_deg,'basis','poly');
+            Mat = {obj.antisymconvmtx(flipud(Globalderiv{1}(m+1,:)'),M)};
+            % Proj_mat = antisymconvmtx(flipud(Proj_mat(m+1,:)'),M);
+
+        end
 
     end
 
