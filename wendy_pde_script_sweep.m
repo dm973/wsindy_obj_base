@@ -1,8 +1,8 @@
 %% load data
 
-runs = 25;
+runs = 100;
 nzs = [0.01 0.05 0.1 0.15 0.2 0.25 0.5];
-tf_params = {{'meth','FFT','param',2}};
+tf_params = arrayfun(@(i){'meth','direct','param',i+3},0:25,'uni',0);
 pde_nums = 19;
 coarse_param = [64 64 92 52 128 64 100 100 52 48 120 48 36 64 46 64];
 subinds = -2;
@@ -225,3 +225,34 @@ set(gcf,'position',[133   444   544   324])
 % saveas(gcf,'/home/danielmessenger/Dropbox/docs/LANL/Presentations/charmnet_2024/figures/wendy_pde_E2per.png')
 
 % grid on
+%%
+
+flz = {'sod_11sweep_26-Nov-2024','KS_11sweep_24-Nov-2024',...
+    'advecdiff_exact_11sweep_26-Nov-2024',...
+    'NLS_long_11sweep_26-Nov-2024',...
+    'Sine_Gordon_11sweep_26-Nov-2024',...
+    'porous2_11sweep_26-Nov-2024'};
+clz = {'r','b','c','g','k','m'};
+i=2;
+figure(1);clf
+for ds = 1:length(flz)
+    load(['~/Dropbox/Boulder/research/data/WENDy_PDE/',flz{ds},'.mat'])
+    true_vec = cell2mat(cellfun(@(x)x(:,end),true_nz_weights(:),'uni',0));
+    errs_0 = cellfun(@(s)norm(s{1}(:,1)-true_vec)/norm(true_vec),stats(i:end,:,:));
+    errs_w = cellfun(@(s)norm(s{1}(:,end)-true_vec)/norm(true_vec),stats(i:end,:,:));
+    med_decrease = 1-errs_w./errs_0;
+    y_w=median(errs_w,3);
+    y_0=median(errs_0,3);
+    y_dec = 1-y_w./y_0;
+    figure(1)
+    semilogy(y_dec,y_w,[clz{ds},'o-'],'linewidth',3)
+    hold on
+end
+
+set(gca,'fontsize',12)
+xlabel('% decrease')
+ylabel('E_2')
+grid on
+set(gcf,'position',[133+600   444   544   324])
+legend(cellfun(@(fl) fl(1:strfind(fl,'_')-1),flz,'uni',0),'location','best')
+saveas(gcf,'/home/danielmessenger/Dropbox/docs/LANL/Presentations/charmnet_2024/figures/wendy_pde_E2vPer.png')

@@ -33,11 +33,11 @@ end
 %% get wsindy_data object
 
 %%% create data object
-Uobj = wsindy_data(U_exact(3),xs);
+Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-200 -200]);
+Uobj.coarsen([-200 -200 -200]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);
 
 %%% add noise
@@ -53,17 +53,17 @@ scales = Uobj.scales;
 %% get lhs
 
 %%% define left-hand-side term
-lhsterms = lhs(3:end);
+lhsterms = lhs;
 numeq = size(lhsterms,1);
 
 %% get library
 use_true = 0; % use pre-loaded terms
 
 %%% differential operators
-x_diffs = [0:4];
+x_diffs = [0:2];
 
 %%% poly/trig functions
-polys = [0:4];
+polys = [0:2];
 trigs = [];
 
 %%% custom terms
@@ -87,7 +87,7 @@ else
     phifun = 'pp';
     tf_meth = 'FFT';
     tau = 10^-16;
-    tauhat = 3;
+    tauhat = 1;
     tf_param = {[tau tauhat max(x_diffs)],[tau tauhat 1]};
 end
 tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,...

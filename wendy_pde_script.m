@@ -33,7 +33,7 @@ pde_names = {'burgers.mat',...          %1 bias=0
     '2D_Blast_prat_90_r_equi.mat',...   %29 
     };
 
-pde_num = 13; % set to 0 to run on pre-loaded dataset
+pde_num = 20; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
@@ -48,12 +48,12 @@ nstates = Uobj.nstates;
 
 %%% coarsen data
 Uobj.trimend(1000,2);
-Uobj.coarsen([-30 -30 -50]);
+Uobj.coarsen([-32 -32 -60]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 1;
-rng(1) % comment out to reproduce results
+noise_ratio = 0.25;
+rng(1);%('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
 
@@ -93,13 +93,13 @@ else
 
     % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
     % tf_meth = 'direct';
-    % tf_param = [14 12];
-
+    % tf_param = [25 25];
+    % 
     % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
     % tf_meth = 'timefrac';
-    % tf_param = 0.15;
+    % tf_param = 0.1;
 
-    subinds = -(5-Uobj.ndims);
+    subinds = -2;
 end
 tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
     'meth',tf_meth,'param',tf_param,'stateind',find(lhs(i,1:nstates),1)),(1:size(lhs,1))','uni',0);
