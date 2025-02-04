@@ -385,7 +385,6 @@ classdef wsindy_data < handle
             Ufft = Ufft(1:NN,:);
         end
 
-
         function obj = getcorners(obj,toggle_plot)
             if ~exist('toggle_plot','var')
                 toggle_plot=0;
@@ -491,7 +490,7 @@ classdef wsindy_data < handle
                 end
             end
         end
-% 
+ 
         function obj = setUniformity(obj)
             obj.isUniform = cellfun(@(t) max(abs(diff(t(:))-mean(diff(t(:)))))<10^-12,obj.grid);
         end

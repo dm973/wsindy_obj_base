@@ -33,7 +33,7 @@ pde_names = {'burgers.mat',...          %1 bias=0
     '2D_Blast_prat_90_r_equi.mat',...   %29 
     };
 
-pde_num = 20; % set to 0 to run on pre-loaded dataset
+pde_num = 6; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
