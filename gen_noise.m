@@ -2,6 +2,8 @@ function [U,noise,noise_ratio_obs,sigma] = gen_noise(U_exact,sigma_NR,noise_dist
 
     if noise_alg == 0 % additive
         stdv = rms(U_exact(:)).^2;
+    elseif noise_alg == 0.1 % additive, std
+        stdv = std(U_exact(:)).^2;
     elseif noise_alg == 1 % multiplicative
         stdv = 1;
     end
@@ -21,7 +23,7 @@ function [U,noise,noise_ratio_obs,sigma] = gen_noise(U_exact,sigma_NR,noise_dist
         end
         noise = sigma*(2*rand(dims)-1);
     end
-    if noise_alg == 0 % additive
+    if ismember(noise_alg,[0 0.1]) % additive
         U = U_exact + noise;
     elseif noise_alg == 1 % multiplicative
         U = U_exact.*(1 + noise);

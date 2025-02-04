@@ -5,7 +5,7 @@ rng_seed = rng().Seed; rng(rng_seed);
 %% load data
 
 %%% choose PDE
-pde_num = 11; % set to 0 to run on pre-loaded dataset
+pde_num = 16; % set to 0 to run on pre-loaded dataset
 dr = '~/Dropbox/Boulder/research/data/WSINDy_PDE/datasets/';
 pde_names = {'burgers.mat',...          %1
     'burgers_vis.mat',...               %2
@@ -22,10 +22,12 @@ pde_names = {'burgers.mat',...          %1
     'NLS.mat',...                       %13
     'porous2.mat',...                   %14
     'Sine_Gordon.mat',...               %15
+    'Nav_Stokes.mat',...                %16
     };
 if pde_num~=0
     pde_name = pde_names{pde_num};
-    load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
+    % load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
+    load([dr,pde_name],'U_exact','lhs','xs');true_nz_weights=[];
 end
 
 %% get wsindy_data object
@@ -35,7 +37,7 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-200 -200]);
+Uobj.coarsen([-200 -200 -200]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);
 
 %%% add noise
@@ -58,10 +60,10 @@ numeq = size(lhsterms,1);
 use_true = 0; % use pre-loaded terms
 
 %%% differential operators
-x_diffs = [0:1];
+x_diffs = [0:2];
 
 %%% poly/trig functions
-polys = [0:4];
+polys = [0:2];
 trigs = [];
 
 %%% custom terms
@@ -85,15 +87,15 @@ else
     phifun = 'pp';
     tf_meth = 'FFT';
     tau = 10^-16;
-    tauhat = 3;
+    tauhat = 1;
     tf_param = {[tau tauhat max(x_diffs)],[tau tauhat 1]};
 end
 tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,...
-    'meth',tf_meth,'param',tf_param,'stateind',find(lhs(i,1:nstates),1)),(1:size(lhs,1))','uni',0);
+    'meth',tf_meth,'param',tf_param,'stateind',find(lhsterms(i,1:nstates),1)),(1:size(lhsterms,1))','uni',0);
 fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
 %% build WSINDy linear system
-WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
+WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhsterms);
 
 %% MSTLS solve
 
