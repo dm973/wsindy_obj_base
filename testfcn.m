@@ -93,6 +93,8 @@ classdef testfcn < handle
                 obj.phifuns = {'pp'};
             elseif isequal(obj.phifuns,'Gauss')
                 obj.phifuns = {'Gauss'};
+            elseif isempty(obj.phifuns)
+                obj.phifuns = default_phifuns;
             end
 
             if length(obj.phifuns)~=obj.ndims

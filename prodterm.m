@@ -63,6 +63,10 @@ classdef prodterm < term
             end
         end
         
+        function m = get_scale(obj,scales)
+            m = obj.t1.get_scale(scales)*obj.t2.get_scale(scales);
+        end
+
         function rhs = get_rhs(obj)
             if isempty(obj.linOp)
                 rhs1 = obj.t1.get_rhs;

@@ -174,10 +174,11 @@ classdef diffOp < linearOp
             end
             if all(dat.isUniform)
                 Dmats = cell(dat.ndims,1);
+                c = cell(dat.ndims,1);
                 for i=1:dat.ndims
                     dv = mean(diff(dat.grid{i}));
-                    c = fdcoeffF(obj.difftags(i),0,(-wd:wd)*dv);
-                    Dmats{i} = obj.antisymconvmtx(flipud(c(:,end)),dat.dims(i));
+                    c{i} = fdcoeffF(obj.difftags(i),0,(-wd:wd)*dv);
+                    Dmats{i} = obj.antisymconvmtx(flipud(c{i}(:,end)),dat.dims(i));
                 end
             end
         end
@@ -269,37 +270,41 @@ classdef diffOp < linearOp
                 dat.getcorners;
                 sigest = dat.estimate_sigma;
                 for i=1:dat.ndims
-                    k_x = dat.ks(i);
-                    dv = mean(diff(dat.grid{i}));
-                    [phi,phip] = optTFcos(3,0);
-                    if isempty(obj.w)
-                        tauhat = 1+dat.dims(i)^(1/3)*sigest{obj.stateind};
-                        obj.w = get_tf_support(phi, dat.dims(i), tauhat, k_x);
-                        obj.w = max(4,obj.w);
-                    end
-                    xf = linspace(-1,1,2*obj.w+1);
-                    Cfs = zeros(2,2*obj.w+1);
-                    Cfs(1,:) = phi(xf);
-                    if obj.difftags(i)>1
-                        syms y;
-                        phip = matlabFunction(diff(phi(y),obj.difftags(i)));
-                    end
-                    Cfs(2,:) = phip(xf)*(obj.w*dv).^-obj.difftags(i);
-                    Vp = obj.antisymconvmtx(Cfs(2,:)/norm(Cfs(1,:),1),dat.dims(i));
-                    if mod(obj.difftags(i),2)==1
-                        V = obj.symconvmtx(Cfs(1,:)/norm(Cfs(1,:),1),dat.dims(i));
+                    if obj.difftags~=0
+                        k_x = dat.ks(i);
+                        dv = mean(diff(dat.grid{i}));
+                        [phi,phip] = optTFcos(3,0);
+                        if isempty(obj.w)
+                            tauhat = 1+dat.dims(i)^(1/3)*sigest{obj.stateind};
+                            obj.w = get_tf_support(phi, dat.dims(i), tauhat, k_x);
+                            obj.w = max(4,obj.w);
+                        end
+                        xf = linspace(-1,1,2*obj.w+1);
+                        Cfs = zeros(2,2*obj.w+1);
+                        Cfs(1,:) = phi(xf);
+                        if obj.difftags(i)>1
+                            syms y;
+                            phip = matlabFunction(diff(phi(y),obj.difftags(i)));
+                        end
+                        Cfs(2,:) = phip(xf)*(obj.w*dv).^-obj.difftags(i);
+                        Vp = obj.antisymconvmtx(Cfs(2,:)/norm(Cfs(1,:),1),dat.dims(i));
+                        if mod(obj.difftags(i),2)==1
+                            V = obj.symconvmtx(Cfs(1,:)/norm(Cfs(1,:),1),dat.dims(i));
+                        else
+                            V = obj.antisymconvmtx(Cfs(1,:)/norm(Cfs(1,:),1),dat.dims(i));
+                        end
+                        c = 0.00001/(0.1+sigest{obj.stateind});
+                        Localderiv = obj.antisymconvmtx(flipud(c_fd{i}(:,2)),dat.dims(i));
+                        regmat1 = (max(sigest{obj.stateind},10^-6)/norm(Localderiv(1,:),1))*Localderiv;
+                        regmat2 = c*speye(dat.dims(i));
+                        Bmat1 = sparse(dat.dims(i),dat.dims(i));
+                        Bmat2 = c*Dmats_fd{i};
+                        A = [V;regmat1;regmat2];
+                        B = [Vp;Bmat1;Bmat2];
+                        Dmats{i} = A \ B;
                     else
-                        V = obj.antisymconvmtx(Cfs(1,:)/norm(Cfs(1,:),1),dat.dims(i));
+                        Dmats{i}= Dmats_fd{i};
                     end
-                    c = 0.00001/(0.1+sigest{obj.stateind});
-                    Localderiv = obj.antisymconvmtx(flipud(c_fd(:,2)),dat.dims(i));
-                    regmat1 = (max(sigest{obj.stateind},10^-6)/norm(Localderiv(1,:),1))*Localderiv;
-                    regmat2 = c*speye(dat.dims(i));
-                    Bmat1 = sparse(dat.dims(i),dat.dims(i));
-                    Bmat2 = c*Dmats_fd{i};
-                    A = [V;regmat1;regmat2];
-                    B = [Vp;Bmat1;Bmat2];
-                    Dmats{i} = A \ B;
                 end
             end
         end
@@ -386,6 +391,13 @@ classdef diffOp < linearOp
             % Localderiv = spdiags(repmat(w(:)',M,1),[0:p],M,M+p);
         end
 
+        function m = get_scale(obj,scales)
+            m = 1;
+            if ~isempty(scales)
+                m=m*scales(obj.stateind);
+                m=m/prod(scales(obj.nstates+1:end).^obj.difftags);
+            end
+        end
 
     end
 
