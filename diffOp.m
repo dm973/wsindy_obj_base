@@ -81,7 +81,11 @@ classdef diffOp < linearOp
 
             for j=1:length(obj.Dmats)
                 if obj.difftags(j)~=0
-                    Y = tensorprod(full(obj.Dmats{j}),Y,2,j);
+                    shift = 1:length(obj.Dmats);
+                    shift([1 j]) = [j 1];
+                    Y = permute(Y,shift);
+                    Y = pagemtimes(full(obj.Dmats{j}),Y);
+                    Y = permute(Y,shift);
                 end
             end
         end
@@ -174,10 +178,11 @@ classdef diffOp < linearOp
             end
             if all(dat.isUniform)
                 Dmats = cell(dat.ndims,1);
+                c = cell(dat.ndims,1);
                 for i=1:dat.ndims
                     dv = mean(diff(dat.grid{i}));
-                    c = fdcoeffF(obj.difftags(i),0,(-wd:wd)*dv);
-                    Dmats{i} = obj.antisymconvmtx(flipud(c(:,end)),dat.dims(i));
+                    c{i} = fdcoeffF(obj.difftags(i),0,(-wd:wd)*dv);
+                    Dmats{i} = obj.antisymconvmtx(flipud(c{i}(:,end)),dat.dims(i));
                 end
             end
         end
@@ -292,7 +297,7 @@ classdef diffOp < linearOp
                         V = obj.antisymconvmtx(Cfs(1,:)/norm(Cfs(1,:),1),dat.dims(i));
                     end
                     c = 0.00001/(0.1+sigest{obj.stateind});
-                    Localderiv = obj.antisymconvmtx(flipud(c_fd(:,2)),dat.dims(i));
+                    Localderiv = obj.antisymconvmtx(flipud(c_fd{i}(:,end)),dat.dims(i));
                     regmat1 = (max(sigest{obj.stateind},10^-6)/norm(Localderiv(1,:),1))*Localderiv;
                     regmat2 = c*speye(dat.dims(i));
                     Bmat1 = sparse(dat.dims(i),dat.dims(i));

@@ -72,7 +72,7 @@ classdef wsindy_model < handle
                 obj.lhsterms = arrayfunvec(obj.lhsterms,@(L)term('ftag',L(1:obj.nstates),'linOp',L(obj.nstates+1:end)),2,0);
             elseif isequal(class(obj.lhsterms),'diffOp')
                 obj.lhsterms = num2cell(obj.lhsterms);
-            elseif any(cellfun(@(x) isequal(x,'term'),superclasses(obj.lhsterms)))
+            elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(obj.lhsterms)))
                 obj.lhsterms = num2cell(obj.lhsterms);
             end
 
@@ -675,6 +675,78 @@ classdef wsindy_model < handle
             res0 = Vn*sig{j};
             b0 = norm(obj.bs{i}{j});
             res0 = res0/b0;
+        end
+
+        function [Fs,Js,Etags] = get_functional_forms(obj,varargin)
+
+            p = inputParser;
+            addParameter(p,'d',[]);
+            addParameter(p,'w',[]);
+            parse(p,varargin{:})
+
+            d = p.Results.d;
+            if ~isempty(d)
+                d1 = digits;
+                digits(d)
+            end
+            
+            w = p.Results.w;
+            if ~isempty(w)
+                w = obj.reshape_w('w',w);
+            else
+                w = obj.reshape_w;
+            end
+
+            Xc = sym2cell(str2sym(strcat('x',num2str((1:obj.nstates)'))));
+            Fs = cell(obj.numeq,1);
+            Js = cell(obj.numeq,1);
+            Etags = cell(obj.numeq,1);
+            for i=1:obj.numeq
+                X = obj.lib(i).terms;
+                difftags = [];
+                for j = 1:length(X)
+                    try
+                        difftags = [difftags;X{j}.linOp.difftags];
+                    catch
+                        difftags = [difftags;[0 0]];
+                    end
+                end
+                
+                uniq_tag = unique(difftags,'rows');
+                fs = cell(size(uniq_tag,1),1);
+                js = cell(size(uniq_tag,1),obj.nstates);
+                for j=1:size(uniq_tag,1)
+                    f = 0; J = num2cell(zeros(1,obj.nstates));
+                    for k = find(ismember(difftags,uniq_tag(j,:),'rows'))'
+                        f = f + sym(w{i}(k),'d')*X{k}.fHandle(Xc{:});
+                        for m = 1:obj.nstates
+                            J{m} = J{m} + sym(w{i}(k),'d')*X{k}.gradterms(m).fHandle(Xc{:});
+                        end
+                    end
+                    fs{j} = simplify(f);
+                    js(j,:) = J;
+                    for m=1:obj.nstates
+                        js{j,m} = simplify(js{j,m});
+                    end
+                end
+                
+                for j=1:size(uniq_tag,1)
+                    fs{j} = matlabFunction(fs{j},'vars',Xc);
+                    for m=1:obj.nstates
+                        js{j,m} = matlabFunction(js{j,m},'vars',Xc);
+                    end
+                end
+                Etags{i} = uniq_tag;
+                Fs{i} = fs;
+                Js{i} = js;
+
+
+                if ~isempty(d)
+                    digits(d1);
+                end
+                
+            end
+
         end
 
     end

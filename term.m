@@ -405,13 +405,13 @@ classdef term < absterm
                 if isequal(class(obj.ftag),'double')
                     if all(isreal(obj.ftag))
                         for k=1:size(obj.ftag,1)
-                            m=m*prod(scales(1:obj.nstates).^obj.ftag(k,:));
+                            m=m*prod(scales(1:obj.nstates).^-obj.ftag(k,:));
                         end
                     end
                 end
                 if ~isempty(obj.linOp)
                     if isequal(class(obj.linOp),'diffOp')
-                        m=m/prod(scales(obj.nstates+1:end).^obj.linOp.difftags);
+                        m=m*prod(scales(obj.nstates+1:end).^obj.linOp.difftags);
                     end
                 end
             end

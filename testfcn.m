@@ -69,6 +69,11 @@ classdef testfcn < handle
 
             obj.dv = cellfun(@(g)mean(diff(g)),dat.grid);
             obj.phifuns = p.Results.phifuns;
+
+            if isempty(obj.phifuns)
+                obj.phifuns = default_phifuns;
+            end
+
             obj.rads = p.Results.rads;
             obj.Cfs = cell(obj.ndims,1);
             obj.Cfsfft = cell(obj.ndims,1);

@@ -385,7 +385,6 @@ classdef wsindy_data < handle
             Ufft = Ufft(1:NN,:);
         end
 
-
         function obj = getcorners(obj,toggle_plot)
             if ~exist('toggle_plot','var')
                 toggle_plot=0;

@@ -144,7 +144,12 @@ classdef library < handle
             elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(terms_in)))
                 for j=1:length(terms_in)
                     obj.terms = [obj.terms,{terms_in(j)}];
-                    obj.tags = [obj.tags,{terms_in(j).ftag}];
+                    if isequal(class(terms_in(j).linOp),'diffOp')
+                        tag_in = [terms_in(j).ftag terms_in(j).linOp.difftags];
+                    else
+                        tag_in = terms_in(j).ftag;
+                    end
+                    obj.tags = [obj.tags,{tag_in}];
                 end
             end
             if ~isempty(terms_in)
