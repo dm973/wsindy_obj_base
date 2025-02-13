@@ -81,7 +81,11 @@ classdef diffOp < linearOp
 
             for j=1:length(obj.Dmats)
                 if obj.difftags(j)~=0
-                    Y = tensorprod(full(obj.Dmats{j}),Y,2,j);
+                    shift = 1:length(obj.Dmats);
+                    shift([1 j]) = [j 1];
+                    Y = permute(Y,shift);
+                    Y = pagemtimes(full(obj.Dmats{j}),Y);
+                    Y = permute(Y,shift);
                 end
             end
         end
@@ -305,6 +309,15 @@ classdef diffOp < linearOp
                     else
                         Dmats{i}= Dmats_fd{i};
                     end
+                    c = 0.00001/(0.1+sigest{obj.stateind});
+                    Localderiv = obj.antisymconvmtx(flipud(c_fd{i}(:,end)),dat.dims(i));
+                    regmat1 = (max(sigest{obj.stateind},10^-6)/norm(Localderiv(1,:),1))*Localderiv;
+                    regmat2 = c*speye(dat.dims(i));
+                    Bmat1 = sparse(dat.dims(i),dat.dims(i));
+                    Bmat2 = c*Dmats_fd{i};
+                    A = [V;regmat1;regmat2];
+                    B = [Vp;Bmat1;Bmat2];
+                    Dmats{i} = A \ B;
                 end
             end
         end

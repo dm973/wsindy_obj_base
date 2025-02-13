@@ -16,6 +16,19 @@ classdef prodterm < term
             addParameter(p,'gradon',default_gradon);
             addParameter(p,'gradterms',default_gradterms);
             addParameter(p,'linOp',default_linOp);
+
+            if isequal(class(t1),'function_handle')
+                t1 = term('fHandle',t1);
+            elseif isequal(class(t1),'double')
+                t1 = term('ftag',t1);
+            end
+            
+            if isequal(class(t2),'function_handle')
+                t2 = term('fHandle',t2);
+            elseif isequal(class(t2),'double')
+                t2 = term('ftag',t2);
+            end
+
             parse(p,t1,t2,varargin{:})
 
             obj.nstates = t1.nstates;

@@ -146,6 +146,9 @@ classdef WS_opt < handle
             alpha = (p.Results.alpha*mean(arrayfun(@(L)length(L.terms),WS.lib))+1)^-1;
             gamma = p.Results.gamma;
             M_diag = p.Results.M_diag;
+            if isempty(M_diag)
+                M_diag = default_M_diag;
+            end
             Hreg = p.Results.Hreg;
             applycov = p.Results.applycov;
             toggle_discrep = p.Results.toggle_discrep;

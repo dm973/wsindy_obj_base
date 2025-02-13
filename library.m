@@ -112,8 +112,6 @@ classdef library < handle
 
         end
 
-
-
         function obj = add_terms(obj,terms_in,gradon,dup)
             if ~exist('gradon','var')
                 gradon = 1;
@@ -144,7 +142,12 @@ classdef library < handle
             elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(terms_in)))
                 for j=1:length(terms_in)
                     obj.terms = [obj.terms,{terms_in(j)}];
-                    obj.tags = [obj.tags,{terms_in(j).ftag}];
+                    if isequal(class(terms_in(j).linOp),'diffOp')
+                        tag_in = [terms_in(j).ftag terms_in(j).linOp.difftags];
+                    else
+                        tag_in = terms_in(j).ftag;
+                    end
+                    obj.tags = [obj.tags,{tag_in}];
                 end
             end
             if ~isempty(terms_in)
@@ -158,6 +161,49 @@ classdef library < handle
             end
             Theta = cell2mat(cellfun(@(tm) tm.evalterm(dat),obj.terms(S),'uni',0));
         end
+
+        function obj = remove_terms(obj,ndims,varargin)
+            p = inputParser;
+            addParameter(p,'ftag',[]);
+            addParameter(p,'difftag',[]);
+            addParameter(p,'ftag_difftag',{});
+            parse(p,varargin{:})
+
+
+
+            ftag = p.Results.ftag;
+            difftag = p.Results.difftag;
+            ftag_difftag = p.Results.ftag_difftag;
+
+            remove_inds = false(length(obj.terms),1);
+            for k=1:length(obj.terms)
+                dt = zeros(1,ndims);
+                ft = obj.terms{k}.ftag;
+                if isequal(class(obj.terms{k}.linOp),'diffOp')
+                    dt = obj.terms{k}.linOp.difftags;
+                end
+                if ~isempty(ftag)
+                    if any(cellfun(@(c)c(ft),ftag))
+                        remove_inds(k) = true;
+                    end
+                end
+                if ~isempty(difftag)
+                    if any(cellfun(@(c)c(dt),difftag))
+                        remove_inds(k) = true;
+                    end
+                end                
+                if ~isempty(ftag_difftag)
+                    if isequal(dt,ftag_difftag{1})
+                        if any(cellfun(@(c)c(ft),ftag_difftag{2}))
+                            remove_inds(k) = true;
+                        end
+                    end
+                end                    
+            end
+            obj.terms = obj.terms(~remove_inds);
+            obj.tags = obj.tags(~remove_inds);            
+        end
+
 
         function Theta_grad = evalGradterms(obj,dat,S)
             if ~exist('S','var')

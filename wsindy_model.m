@@ -70,6 +70,8 @@ classdef wsindy_model < handle
                 obj.lhsterms = arrayfun(@(i)term('ftag',E(i,:),'linOp',[zeros(1,obj.ndims-1) 1]),(1:obj.nstates)','uni',0);
             elseif isequal(class(obj.lhsterms),'double')
                 obj.lhsterms = arrayfunvec(obj.lhsterms,@(L)term('ftag',L(1:obj.nstates),'linOp',L(obj.nstates+1:end)),2,0);
+            elseif isequal(class(obj.lhsterms),'diffOp')
+                obj.lhsterms = num2cell(obj.lhsterms);
             elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(obj.lhsterms)))
                 obj.lhsterms = num2cell(obj.lhsterms);
             end
@@ -673,6 +675,165 @@ classdef wsindy_model < handle
             res0 = Vn*sig{j};
             b0 = norm(obj.bs{i}{j});
             res0 = res0/b0;
+        end
+
+        function [Fs,Js,Etags] = get_functional_forms(obj,varargin)
+
+            p = inputParser;
+            addParameter(p,'d',[]);
+            addParameter(p,'w',[]);
+            parse(p,varargin{:})
+
+            d = p.Results.d;
+            if ~isempty(d)
+                d1 = digits;
+                digits(d)
+            end
+            
+            w = p.Results.w;
+            if ~isempty(w)
+                w = obj.reshape_w('w',w);
+            else
+                w = obj.reshape_w;
+            end
+
+            Xc = sym2cell(str2sym(strcat('x',num2str((1:obj.nstates)'))));
+            Fs = cell(obj.numeq,1);
+            Js = cell(obj.numeq,1);
+            Etags = cell(obj.numeq,1);
+            for i=1:obj.numeq
+                X = obj.lib(i).terms;
+                difftags = [];
+                for j = 1:length(X)
+                    try
+                        difftags = [difftags;X{j}.linOp.difftags];
+                    catch
+                        difftags = [difftags;[0 0]];
+                    end
+                end
+                
+                uniq_tag = unique(difftags,'rows');
+                fs = cell(size(uniq_tag,1),1);
+                js = cell(size(uniq_tag,1),obj.nstates);
+                for j=1:size(uniq_tag,1)
+                    f = 0; J = num2cell(zeros(1,obj.nstates));
+                    for k = find(ismember(difftags,uniq_tag(j,:),'rows'))'
+                        f = f + sym(w{i}(k),'d')*X{k}.fHandle(Xc{:});
+                        for m = 1:obj.nstates
+                            J{m} = J{m} + sym(w{i}(k),'d')*X{k}.gradterms(m).fHandle(Xc{:});
+                        end
+                    end
+                    fs{j} = simplify(f);
+                    js(j,:) = J;
+                    for m=1:obj.nstates
+                        js{j,m} = simplify(js{j,m});
+                    end
+                end
+                
+                for j=1:size(uniq_tag,1)
+                    fs{j} = matlabFunction(fs{j},'vars',Xc);
+                    for m=1:obj.nstates
+                        js{j,m} = matlabFunction(js{j,m},'vars',Xc);
+                    end
+                end
+                Etags{i} = uniq_tag;
+                Fs{i} = fs;
+                Js{i} = js;
+
+
+                if ~isempty(d)
+                    digits(d1);
+                end
+                
+            end
+
+        end
+
+        function [f,J,s] = get_functional_forms_vec(obj,varargin)
+
+            p = inputParser;
+            addParameter(p,'w',[]);
+            parse(p,varargin{:})
+            
+            w = p.Results.w;
+            if ~isempty(w)
+                w = obj.reshape_w('w',w);
+            else
+                w = obj.reshape_w;
+            end
+        
+            Fs = cell(obj.numeq,1);
+            for i=1:obj.numeq
+                X = obj.lib(i).terms;
+                difftags = [];
+                for j = 1:length(X)
+                    try
+                        difftags = [difftags;X{j}.linOp.difftags];
+                    catch
+                        difftags = [difftags;[0 0]];
+                    end
+                end
+                
+                uniq_tag = unique(difftags,'rows');
+                fs = cell(size(uniq_tag,1),1);
+                for j=1:size(uniq_tag,1)
+                    inds = find(ismember(difftags,uniq_tag(j,:),'rows'))';
+                    tags = zeros(length(inds),obj.nstates);
+                    tags_J = zeros(length(inds),obj.nstates,obj.nstates);
+                    W = zeros(length(inds),1);
+                    W_J = zeros(length(inds),obj.nstates);
+                    for k = 1:length(inds)
+                        W(k) = w{i}(inds(k));
+                        tags(k,:) = X{inds(k)}.ftag;
+                        for ll=1:obj.nstates
+                            tags_J(k,ll,:) = X{inds(k)}.gradterms(ll).ftag;
+                        end
+                        W_J(k,:) = W(k)*arrayfun(@(gt)gt.coeff,X{inds(k)}.gradterms);
+                    end
+                    fs{j} = {uniq_tag(j,:), tags, W, tags_J, W_J};
+                end
+                Fs{i} = fs;
+            end
+ 
+            f = @(q) obj.eval_ff_vec(Fs,[1,0],q);
+            s = @(q) obj.eval_ff_vec(Fs,[0,0],q);
+            J = @(q) obj.eval_Jf_vec(Fs,[1,0],q);        
+        end
+
+        function X = eval_ff_vec(obj,Fs,difftag,q)
+            X = q*0;
+            for i=1:obj.numeq
+                for j=1:length(Fs{i})
+                    if isequal(Fs{i}{j}{1},difftag)
+                        X(:,i) = obj.eval_ff(Fs{i}{j}{2},Fs{i}{j}{3},q);
+                    end
+                end
+            end
+        end
+
+        function JX = eval_Jf_vec(obj,Fs,difftag,q)
+            JX = zeros(size(q,1),size(q,2),size(q,2));
+            for i=1:obj.numeq
+                for j=1:length(Fs{i})
+                    if isequal(Fs{i}{j}{1},difftag)
+                        for k=1:obj.nstates
+                            JX(:,i,k) = obj.eval_ff(squeeze(Fs{i}{j}{4}(:,k,:)),Fs{i}{j}{5}(:,k),q);
+                        end
+                    end
+                end
+            end
+        end
+
+        function out = eval_ff(obj,tags,W,q)
+            if size(q,2)~=size(tags,2)
+                disp(['error: mismatch btw data dim and tems'])
+            end
+            out = zeros(size(q,1),1);
+            for j=1:length(W)
+                if W(j)~=0
+                    out = out + W(j)*prod(q.^tags(j,:),2);
+                end
+            end
         end
 
     end
