@@ -749,6 +749,93 @@ classdef wsindy_model < handle
 
         end
 
+        function [f,J,s] = get_functional_forms_vec(obj,varargin)
+
+            p = inputParser;
+            addParameter(p,'w',[]);
+            parse(p,varargin{:})
+            
+            w = p.Results.w;
+            if ~isempty(w)
+                w = obj.reshape_w('w',w);
+            else
+                w = obj.reshape_w;
+            end
+        
+            Fs = cell(obj.numeq,1);
+            for i=1:obj.numeq
+                X = obj.lib(i).terms;
+                difftags = [];
+                for j = 1:length(X)
+                    try
+                        difftags = [difftags;X{j}.linOp.difftags];
+                    catch
+                        difftags = [difftags;[0 0]];
+                    end
+                end
+                
+                uniq_tag = unique(difftags,'rows');
+                fs = cell(size(uniq_tag,1),1);
+                for j=1:size(uniq_tag,1)
+                    inds = find(ismember(difftags,uniq_tag(j,:),'rows'))';
+                    tags = zeros(length(inds),obj.nstates);
+                    tags_J = zeros(length(inds),obj.nstates,obj.nstates);
+                    W = zeros(length(inds),1);
+                    W_J = zeros(length(inds),obj.nstates);
+                    for k = 1:length(inds)
+                        W(k) = w{i}(inds(k));
+                        tags(k,:) = X{inds(k)}.ftag;
+                        for ll=1:obj.nstates
+                            tags_J(k,ll,:) = X{inds(k)}.gradterms(ll).ftag;
+                        end
+                        W_J(k,:) = W(k)*arrayfun(@(gt)gt.coeff,X{inds(k)}.gradterms);
+                    end
+                    fs{j} = {uniq_tag(j,:), tags, W, tags_J, W_J};
+                end
+                Fs{i} = fs;
+            end
+ 
+            f = @(q) obj.eval_ff_vec(Fs,[1,0],q);
+            s = @(q) obj.eval_ff_vec(Fs,[0,0],q);
+            J = @(q) obj.eval_Jf_vec(Fs,[1,0],q);        
+        end
+
+        function X = eval_ff_vec(obj,Fs,difftag,q)
+            X = q*0;
+            for i=1:obj.numeq
+                for j=1:length(Fs{i})
+                    if isequal(Fs{i}{j}{1},difftag)
+                        X(:,i) = obj.eval_ff(Fs{i}{j}{2},Fs{i}{j}{3},q);
+                    end
+                end
+            end
+        end
+
+        function JX = eval_Jf_vec(obj,Fs,difftag,q)
+            JX = zeros(size(q,1),size(q,2),size(q,2));
+            for i=1:obj.numeq
+                for j=1:length(Fs{i})
+                    if isequal(Fs{i}{j}{1},difftag)
+                        for k=1:obj.nstates
+                            JX(:,i,k) = obj.eval_ff(squeeze(Fs{i}{j}{4}(:,k,:)),Fs{i}{j}{5}(:,k),q);
+                        end
+                    end
+                end
+            end
+        end
+
+        function out = eval_ff(obj,tags,W,q)
+            if size(q,2)~=size(tags,2)
+                disp(['error: mismatch btw data dim and tems'])
+            end
+            out = zeros(size(q,1),1);
+            for j=1:length(W)
+                if W(j)~=0
+                    out = out + W(j)*prod(q.^tags(j,:),2);
+                end
+            end
+        end
+
     end
 
 end
