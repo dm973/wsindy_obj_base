@@ -86,7 +86,13 @@ classdef testfcn < handle
             obj.avg = p.Results.avg;
             obj.stateind = p.Results.stateind;
             obj.mtmin = p.Results.mtmin;
+            if length(obj.mtmin)<obj.ndims
+                obj.mtmin = repelem(obj.mtmin,1,obj.ndims);
+            end
             obj.mtmax = p.Results.mtmax;
+            if length(obj.mtmax)<obj.ndims
+                obj.mtmax = repelem(obj.mtmax,1,obj.ndims);
+            end
             obj.pre_conv = p.Results.pre_conv;
             obj.Kmax= p.Results.Kmax;
 

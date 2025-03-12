@@ -749,7 +749,7 @@ classdef wsindy_model < handle
 
         end
 
-        function [f,J,s] = get_functional_forms_vec(obj,varargin)
+        function [f,J,s,Fs] = get_functional_forms_vec(obj,varargin)
 
             p = inputParser;
             addParameter(p,'w',[]);

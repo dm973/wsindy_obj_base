@@ -67,6 +67,8 @@ legend('p-val')
 %%% GLS residual: WENDy final to true
 subplot(3,2,5)
 plot(res(:,end)); 
+title('C^{-1/2}(b-G*w)')
 
 subplot(3,2,6)
 plot(res_0(:,1))
+title('b-G*w')

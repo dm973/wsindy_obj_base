@@ -167,16 +167,17 @@ classdef wendy_model < wsindy_model
                 if isempty(obj.cov)
                     obj.get_cov;
                 end
+                RT = obj.cov;
                 if obj.statcorrect(1)>1
-                    obj.get_H;
-                    R_temp = obj.cov + obj.H;
-                else
-                    R_temp = obj.cov;
+                    if obj.dat(1).estimate_sigma{1}>obj.statcorrect(1)-1
+                        obj.get_H;
+                        RT = RT + obj.H;
+                    end
                 end
                 check = 0;
                 while check == 0
                     try
-                        RT = R_temp + (diag_reg/(1-diag_reg)*mean(diag(R_temp)))*speye(size(obj.cov,1));
+                        RT = RT + (diag_reg/(1-diag_reg)*mean(diag(RT)))*speye(size(obj.cov,1));
                         RT = chol( RT )';
                         RT = sqrt(1-diag_reg)*RT;
                         check = 1;
