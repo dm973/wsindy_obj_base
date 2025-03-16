@@ -1,50 +1,89 @@
 %% load data
 
-dr = 'C:\Users\385570\Desktop\data\wsindy_pde_data\';
-pde_name = 'Nav_Stokes.mat';
-load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
+%%% choose PDE
+dr = '~/Dropbox/Boulder/research/data/WSINDy_PDE/datasets/';
+pde_names = {'burgers.mat',...          %1 bias=0
+    'burgers_vis.mat',...               %2 bias=0
+    'visburgs_etdrk4.mat',...           %3 bias=0 -- 92
+    'burgers_smallamp.mat',...          %4 bias=0 -- 52
+    'burgers_vis0025_cubic2.mat',...    %5 bias=0 -- 128
+    'KdV.mat',...                       %6 bias=0, variable -- 64
+    'KS.mat',...                        %7 bias=0, -- 100
+    'hyperKS.mat',...                   %8 bias=0, -- 120
+    'lin_schrod.mat',...                %9 bias=0,H=0, -- 52
+    'NLS.mat',...                       %10 %%% bias correct! cov helps a little, -- 48
+    'NLS_long.mat',...                  %11 -- 120
+    'transportDiff.mat',...             %12 bias=0,H=0, -- 48
+    'advecdiff_exact.mat',...           %13 %%% bias=0,H=0, -- 36
+    'AC_temp.mat',...                   %14 % - very bad, transitions to another equation?, -- 64
+    'fkpp_tw.mat',...                   %15 % - very bad, transitions to another equation?, -- 46
+    'sod.mat',...                       %16 %% -- 64
+    'bw.mat',...                        %17 
+    'bwEpstar.mat',...                  %18 
+    'porous2.mat',...                   %19 bias=0
+    'Sine_Gordon.mat',...               %20 %%% bias correct! cov + bias
+    'wave2Du3.mat',...                  %21 
+    'rxn_diff.mat',...                  %22 
+    'full_or_old/rxn_diff_old.mat',...  %23 
+    'Nav_Stokes.mat',...                %24 bias=0
+    '2D_Blast_prat_90_r.mat',...        %25 
+    'bwE.mat',...                       %26 %%2D
+    'wave3D.mat',...                    %27 bias=0,H=0
+    'wave3D_N128.mat',...               %28 bias=0,H=0
+    '2D_Blast_prat_90_r_equi.mat',...   %29 
+    };
+
+pde_num = 10; % set to 0 to run on pre-loaded dataset
+
+if pde_num~=0
+    pde_name = pde_names{pde_num};
+    load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
+end
 
 %% create data object
 
 Uobj = wsindy_data(U_exact,xs);
 
 %%% coarsen spacetime grid
-Uobj.coarsen([2 2 1]);
+Uobj.coarsen([2 2]);
 
 %%% add noise
-Uobj.addnoise(0.0);
+Uobj.addnoise(0.2);
 
 %%% scale data
-Uobj.set_scales([]);
+% Uobj.set_scales(0);
 
 %% set lhs 
 
-lhsterms = term('ftag',[0,0,1],'linOp',[0,0,1]); %%% term objects are of the form L*f(u,x) with f specified by 'ftag' of 'fHandle', and L by 'linOp'
+lhsterms = {term('ftag',[1,0],'linOp',[0,1]),term('ftag',[0,1],'linOp',[0,1])}; %%% term objects are of the form L*f(u,x) with f specified by 'ftag' of 'fHandle', and L by 'linOp'
 
 %% set library
 
 %%% differential operators
-x_diffs = [0:2];
+x_diffs = [0:5];
 
 %%% poly/trig functions
-polys = [0:2]; trigs = [];
+polys = [0:5]; trigs = [];
 
 %%% customize
-custom_add = {...
-    term('fHandle',@(u,v,w) exp(sin(u+v))),...                              % an exotic term specified by function handle    
-    compterm(@(u)u.^2,diffOp([1,1,0])),...                                  % a term nonlinear in a derivative
-    prodterm(term('ftag',[0,0,-1i]),diffOp([0,0,2])),...                    % a product of two terms
-    addterm(diffOp([4,0,0],'stateind',3),diffOp([0,4,0],'stateind',3)),...  % add two terms together
-    };
+custom_add = {};
+% {...
+    % term('fHandle',@(u,v,w) exp(sin(u+v))),...                              % an exotic term specified by function handle    
+    % compterm(@(u)u.^2,diffOp([1,1,0])),...                                  % a term nonlinear in a derivative
+    % prodterm(term('ftag',[0,0,-1i]),diffOp([0,0,2])),...                    % a product of two terms
+    % addterm(diffOp([4,0,0],'stateind',3),diffOp([0,4,0],'stateind',3)),...  % add two terms together
+    % };
 
-custom_remove_f = {@(tag) all(tag(4:5))};                   % remove all cross derivatives
-custom_remove_t = [1 0 0 1 0 0; 0 1 0 0 1 0];             % remove tags for divergence terms
+custom_remove_f = {};%{@(tag) all(tag(4:5))};                   % remove all cross derivatives
+custom_remove_t = {};%[1 0 0 1 0 0; 0 1 0 0 1 0];             % remove tags for divergence terms
 
 lib = get_lib(Uobj,polys,trigs,x_diffs,custom_add,custom_remove_f,custom_remove_t);
 
 %% set testfcn 
 
-tf = testfcn(Uobj,'meth','FFT','param',2,'stateind',3,'subinds',-2);
+phi = @(v) (1-v.^2).^9;
+%%% 'meth' 'FFT', 'timefrac' (0.1), 'direct', 25
+tf = testfcn(Uobj,'phifuns',phi,'meth','FFT','param',2,'subinds',-4);
 
 %% get wsindy model
 

@@ -96,10 +96,10 @@ end
 cap = [10^-4,10^2];
 cov_params = [1 1];
 pde_names_script;
-for pde_num = 16
+for pde_num = 19
     try
         pde_name = pde_names{pde_num};
-        dt = '07-Nov-2024';
+        dt = '26-Nov-2024';
         data_dr = '~/Dropbox/Boulder/research/data/WENDy_PDE/';
         ttl=[strrep(pde_name,'.mat',''),'_',strrep(num2str(cov_params),' ',''),'sweep_',dt];
         load([data_dr,ttl,'.mat'],...
@@ -124,7 +124,7 @@ for pde_num = 16
             title(['noise level=',num2str(nzs(j))])
         end
         sgtitle([strrep(strrep(pde_name,'_',' '),'.mat',''),' grid=',num2str(-cg(1)),'x',num2str(-cg(2))] )
-        saveas(gcf,[data_dr,ttl,'.png'])
+        % saveas(gcf,[data_dr,ttl,'.png'])
         disp(['plot successful:',num2str(pde_num)])
     catch
         disp(['data not found:',num2str(pde_num)])

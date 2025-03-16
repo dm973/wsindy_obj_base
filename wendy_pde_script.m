@@ -33,7 +33,7 @@ pde_names = {'burgers.mat',...          %1 bias=0
     '2D_Blast_prat_90_r_equi.mat',...   %29 
     };
 
-pde_num = 6; % set to 0 to run on pre-loaded dataset
+pde_num = 19; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
@@ -52,7 +52,7 @@ Uobj.coarsen([-32 -32 -60]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.25;
+noise_ratio = 1;
 rng(1);%('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
