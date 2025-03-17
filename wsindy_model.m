@@ -812,12 +812,14 @@ classdef wsindy_model < handle
         end
 
         function JX = eval_Jf_vec(obj,Fs,difftag,q)
-            JX = zeros(size(q,1),size(q,2),size(q,2));
+            obj.nstates = size(q,2);
+            JX = zeros(size(q,1),obj.nstates,obj.nstates);
             for i=1:obj.numeq
                 for j=1:length(Fs{i})
+                    num_terms = size(Fs{i}{j}{2},1);
                     if isequal(Fs{i}{j}{1},difftag)
                         for k=1:obj.nstates
-                            JX(:,i,k) = obj.eval_ff(squeeze(Fs{i}{j}{4}(:,k,:)),Fs{i}{j}{5}(:,k),q);
+                            JX(:,i,k) = obj.eval_ff(reshape(Fs{i}{j}{4}(:,k,:),num_terms,obj.nstates),Fs{i}{j}{5}(:,k),q);
                         end
                     end
                 end

@@ -180,7 +180,8 @@ classdef testfcn < handle
                         if isequal(class(obj.phifuns{i}),'function_handle')
                             mt = get_tf_support(obj.phifuns{i},dat.dims(i),obj.param(i),dat.ks(obj.stateind,i));
                         else
-                            [obj.phifuns{i},mt] = obj.get_phi_handle(dat.ks(obj.stateind,i),dat.dims(i),obj.phifuns{i},obj.param{i});
+                            [obj.phifuns{i},mt,p] = obj.get_phi_handle(dat.ks(obj.stateind,i),dat.dims(i),obj.phifuns{i},obj.param{i});
+                            obj.param{i} = [obj.param{i},p];
                         end
                     elseif isequal(obj.meth,'timefrac')
                         mt = floor(length(dat.grid{i})*obj.param(i));

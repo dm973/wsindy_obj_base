@@ -44,7 +44,9 @@ classdef addterm < term
         end
 
         function obj = get_grads(obj)
-            obj.gradterms = repmat(addterm.empty,1,obj.nstates);
+            obj.gradterms = repmat(addterm(term('ftag',0),term('ftag',0)),1,obj.nstates);
+            obj.t1.get_grads;
+            obj.t2.get_grads;
             for j=1:obj.nstates
                 obj.gradterms(j) = addterm(obj.t1.gradterms(j),obj.t2.gradterms(j),'gradon',0);
             end

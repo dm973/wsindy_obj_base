@@ -57,18 +57,20 @@ hold off
 grid on
 
 %%% p-values
-subplot(3,2,4)
-pvals = arrayfunvec(res,@(v)outn(@swtest,v,2),1);
-plot(pvals,'o-')
-title(['p-val=',num2str(pvals(end))])
-xlabel('iter')
-legend('p-val')
+if ~isempty(res_0)
+    subplot(3,2,4)
+    pvals = arrayfunvec(res,@(v)outn(@swtest,v,2),1);
+    plot(pvals,'o-')
+    title(['p-val=',num2str(pvals(end))])
+    xlabel('iter')
+    legend('p-val')
 
-%%% GLS residual: WENDy final to true
-subplot(3,2,5)
-plot(res(:,end)); 
-title('C^{-1/2}(b-G*w)')
-
-subplot(3,2,6)
-plot(res_0(:,1))
-title('b-G*w')
+    %%% GLS residual: WENDy final to true
+    subplot(3,2,5)
+    plot(res(:,end)); 
+    title('C^{-1/2}(b-G*w)')
+    
+    subplot(3,2,6)
+    plot(res_0(:,1))
+    title('b-G*w')
+end

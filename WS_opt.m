@@ -428,6 +428,7 @@ classdef WS_opt < handle
             addParameter(p,'regmeth',default_regmeth);
             addParameter(p,'verbose',0);
             addParameter(p,'linregargs',{});
+            addParameter(p,'CovW_type','OLS');
             parse(p,WS,varargin{:})
 
             maxits = p.Results.maxits;
@@ -438,6 +439,7 @@ classdef WS_opt < handle
             verbosity = p.Results.verbose;
             linregargs = p.Results.linregargs;
             tr = p.Results.trim_rows;
+            CovW_type = p.Results.CovW_type;
 
             if verbosity
                 tic,
@@ -491,14 +493,25 @@ classdef WS_opt < handle
                 res = [res G*w_its(sparse_inds,end)-b];
                 its = size(w_its,2)-1;
             end
-            
-            % CovW = inv(G'*G);
+
             Ginv = pinv(G_0(:,WS.weights~=0));
             if ~exist('RT','var')
-                RT = speye(size(Ginv,2))*norm(res_0(:,end))/sqrt(size(res_0,1)-1);
+                try
+                    RT = speye(size(Ginv,2))*norm(res_0(:,end))/sqrt(size(res_0,1)-1);
+                catch
+                    RT = speye(size(Ginv,2));
+                end
             end
-            Ginv = Ginv*RT;
-            CovW = Ginv*Ginv';
+            
+            if isequal(CovW_type, 'C-R')
+            %%% Cramer-Rao inspired covariance (more consistent with WENDy parameter distribution)
+                CovW = inv(G'*G);
+            elseif isequal(CovW_type, 'OLS')
+            %%% OLS left-inverse to compute parameter covariance
+                Ginv = Ginv*RT;
+                CovW = Ginv*Ginv';
+            end
+            
             if verbosity
                 disp(['wendy iter time=',num2str(toc),'; sparsity=',num2str(length(find(WS.weights))),'; its=',num2str(its)])
             end

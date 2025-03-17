@@ -176,6 +176,9 @@ classdef term < absterm
             if isequal(class(obj.linOp),'diffOp')
                 s = ['D^[',strrep(num2str(obj.linOp.difftags),'  ',','),']',s];
             end
+            if obj.coeff~=1
+                s = [num2str(obj.coeff),'*',s];
+            end
         end
 
         function s = get_str_0(obj)
@@ -222,6 +225,13 @@ classdef term < absterm
             end
         end
 
+        function obj = set_coeff(obj,coeff)
+            obj.coeff = coeff;
+            obj.get_fHandle;
+            if obj.gradon == 1
+                obj = obj.get_grads;
+            end
+        end
 
     end
 
