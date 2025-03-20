@@ -812,7 +812,9 @@ classdef wsindy_model < handle
         end
 
         function JX = eval_Jf_vec(obj,Fs,difftag,q)
-            obj.nstates = size(q,2);
+            if isvector(q)
+                q = q(:)';
+            end
             JX = zeros(size(q,1),obj.nstates,obj.nstates);
             for i=1:obj.numeq
                 for j=1:length(Fs{i})
@@ -836,6 +838,12 @@ classdef wsindy_model < handle
                     out = out + W(j)*prod(q.^tags(j,:),2);
                 end
             end
+        end
+
+        function diff_tags = get_diffs(obj)
+            diff_tags = arrayfun(@(L)L.get_diffs(obj.ndims),obj.lib(:),'un',0);
+            diff_tags = cell2mat(diff_tags);
+            diff_tags = unique(diff_tags,'rows');
         end
 
     end

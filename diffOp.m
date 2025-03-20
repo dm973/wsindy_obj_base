@@ -5,6 +5,7 @@ classdef diffOp < linearOp
         stateind
         Dmats
         w
+        ndims
     end
 
     methods
@@ -30,6 +31,7 @@ classdef diffOp < linearOp
 
             obj.Dmats = [];
             obj.difftags = difftags;
+            obj.ndims = length(difftags);
             obj.nstates = p.Results.nstates;
             obj.stateind = p.Results.stateind;
             obj.fHandle = @(varargin)varargin{obj.stateind};

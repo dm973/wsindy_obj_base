@@ -306,6 +306,18 @@ classdef library < handle
         function Mscales = get_scales(obj,scales)
             Mscales = cellfun(@(t)t.get_scale(scales),obj.terms(:));
         end
+
+        function diff_tags = get_diffs(obj,ndims)
+            diff_tags = [];
+            for tm = [obj.terms{:}]
+                if isequal(class(tm.linOp),'diffOp')
+                    diff_tags = [diff_tags;tm.linOp.difftags];
+                elseif isempty(tm.linOp)
+                    diff_tags = [diff_tags;zeros(1,ndims)];
+                end
+            end
+            diff_tags = unique(diff_tags,'rows');
+        end
     end
 
 end
