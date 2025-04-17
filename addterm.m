@@ -55,7 +55,7 @@ classdef addterm < term
         function s = get_str(obj)
             s = ['(',obj.t1.get_str,')+(',obj.t2.get_str,')'];
             if isequal(class(obj.linOp),'diffOp')
-                s = ['(d/dt)^',num2str(obj.linOp.difftags),s];
+                s = ['D^[',strrep(num2str(obj.linOp.difftags),'  ',','),']',s];
             end
         end
         

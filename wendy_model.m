@@ -46,16 +46,16 @@ classdef wendy_model < wsindy_model
             % disp(['completed.'])
         end
 
-        function R = get_H_R(obj)
+        function [R,Rsig] = get_H_R(obj)
             N = obj.nstates;
             R = sparse(0,0);
             for n=1:obj.ntraj
                 sigmas = obj.dat(n).estimate_sigma;
                 Rsig = zeros(N^2,N^2);
-                for i=1:N
-                    for j=1:N
-                        for k=1:N
-                            for l=1:N
+                for i=1:N % first component column index
+                    for j=1:N % second component column index
+                        for k=1:N % first component row index
+                            for l=1:N % second component row index
                                 if all([i==k,j==l,i~=j])
                                     Rsig((i-1)*N+j,(k-1)*N+l) = sigmas{i}^2*sigmas{j}^2;
                                 elseif all([i==j,j==k,k==l])
@@ -67,14 +67,13 @@ classdef wendy_model < wsindy_model
                         end
                     end
                 end
-                Rsig = kron(Rsig,speye(prod(obj.dat(n).dims)));
-                R = blkdiag(R,Rsig);
+                R = blkdiag(R,kron(Rsig,speye(prod(obj.dat(n).dims))));
             end
         end
 
         function obj = get_H(obj)
             obj.get_Hfac;
-            w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
+            w = obj.reshape_w; 
             S = obj.get_supp;
             obj.H = arrayfun(@(s)cell(obj.numeq,1),(1:obj.ntraj)','uni',0);
             for i=1:obj.ntraj

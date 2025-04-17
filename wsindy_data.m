@@ -77,6 +77,9 @@ classdef wsindy_data < handle
                     d=1:obj.ndims;
                     s = s + d*0;
                 else
+                    if length(s)<obj.ndims
+                        s = [repmat(s(1),1,obj.ndims-1),s(end)];
+                    end
                     d=1:min(length(s),obj.ndims);
                 end
             else

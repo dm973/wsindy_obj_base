@@ -35,15 +35,6 @@ classdef term < absterm
             obj.gradon = p.Results.gradon;
             obj.tol = p.Results.tol;
 
-            if ~isempty(obj.linOp)
-                if isequal(class(obj.linOp),'double')
-                    if ~isequal(obj.linOp,0)
-                        obj.linOp = diffOp(obj.linOp,'nstates',obj.nstates);
-                    else
-                        obj.linOp = [];
-                    end
-                end
-            end
 
             if ~isempty(obj.ftag)
                 obj = obj.set_tag;
@@ -51,9 +42,21 @@ classdef term < absterm
                 obj = obj.set_fHandle;
             end
 
-            if and(obj.gradon,isempty(obj.gradterms))
-                obj = obj.get_grads;
-            end
+            obj.set_linOp(obj.linOp);
+
+            % if ~isempty(obj.linOp)
+            %     if isequal(class(obj.linOp),'double')
+            %         if ~isequal(obj.linOp,0)
+            %             obj.linOp = diffOp(obj.linOp,'nstates',obj.nstates);
+            %         else
+            %             obj.linOp = [];
+            %         end
+            %     end
+            % end
+
+            % if and(obj.gradon,isempty(obj.gradterms))
+            %     obj = obj.get_grads;
+            % end
 
         end
 
@@ -176,9 +179,9 @@ classdef term < absterm
             if isequal(class(obj.linOp),'diffOp')
                 s = ['D^[',strrep(num2str(obj.linOp.difftags),'  ',','),']',s];
             end
-            if obj.coeff~=1
-                s = [num2str(obj.coeff),'*',s];
-            end
+            % if obj.coeff~=1
+            %     s = [num2str(obj.coeff),'*',s];
+            % end
         end
 
         function s = get_str_0(obj)
@@ -232,6 +235,25 @@ classdef term < absterm
                 obj = obj.get_grads;
             end
         end
+
+        function obj = set_linOp(obj,linOp)
+
+            if ~isempty(linOp)
+                if isequal(class(linOp),'double')
+                    if ~isequal(linOp,0)
+                        obj.linOp = diffOp(linOp,'nstates',obj.nstates);
+                    else
+                        obj.linOp = [];
+                    end
+                end
+            end
+
+            if obj.gradon == 1
+                obj = obj.get_grads;
+            end
+
+        end
+
 
     end
 

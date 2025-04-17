@@ -1,4 +1,4 @@
-function [Xi,its] = sparsifyDynamics(Theta,dXdt,lambda,n,gamma,M,maxits,toggle_jointthresh,reg_inds)
+function [Xi,its,reg_inds] = sparsifyDynamics(Theta,dXdt,lambda,n,gamma,M,maxits,toggle_jointthresh,reg_inds)
 % Copyright 2015, All Rights Reserved
 % Code by Steven L. Brunton
 % For Paper, "Discovering Governing Equations from Data: 

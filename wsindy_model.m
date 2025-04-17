@@ -601,21 +601,29 @@ classdef wsindy_model < handle
             end
         end
 
-        function T = termmags(obj)
+        function T = termmags(obj,varargin)
+            IP = inputParser; 
+            addParameter(IP, 'w', obj.weights);
+            parse(IP, varargin{:});
+            w = IP.Results.w;
             if isequal(obj.catm ,'component')
-                T = cellfun(@(w,s,G,b)vecnorm(G(:,s).*w')/norm(b),obj.get_params,obj.get_supp,obj.G,obj.b,'uni',0);
+                T = cellfun(@(w,s,G,b)vecnorm(G(:,s).*w')/norm(b),obj.get_params('w',w),obj.get_supp,obj.G,obj.b,'uni',0);
             elseif isequal(obj.catm ,'blkdiag')
-                T = vecnorm(obj.G{1}.*obj.weights')/norm(obj.b{1});
+                T = vecnorm(obj.G{1}.*w')/norm(obj.b{1});
                 T = T(obj.weights~=0);
             end
         end
 
-        function T = termproj(obj)
+        function T = termproj(obj,varargin)
+            IP = inputParser; 
+            addParameter(IP, 'w', obj.weights);
+            parse(IP, varargin{:});
+            w = IP.Results.w;
             if isequal(obj.catm ,'component')
-                T = cellfun(@(w,s,G,b)abs(b'*G(:,s))/norm(b)./vecnorm(G(:,s)),obj.get_params,obj.get_supp,obj.G,obj.b,'uni',0);
+                T = cellfun(@(w,s,G,b)abs(b'*G(:,s))/norm(b)./vecnorm(G(:,s)),obj.get_params('w',w),obj.get_supp,obj.G,obj.b,'uni',0);
             elseif isequal(obj.catm ,'blkdiag')
                 T = abs(obj.b{1}'*obj.G{1})/norm(obj.b{1})./vecnorm(obj.G{1});
-                T = T(obj.weights~=0);
+                T = T(w~=0);
             end
         end
 
@@ -793,8 +801,7 @@ classdef wsindy_model < handle
                     fs{j} = {uniq_tag(j,:), tags, W, tags_J, W_J};
                 end
                 Fs{i} = fs;
-            end
- 
+            end 
             f = @(q) obj.eval_ff_vec(Fs,[1,0],q);
             s = @(q) obj.eval_ff_vec(Fs,[0,0],q);
             J = @(q) obj.eval_Jf_vec(Fs,[1,0],q);        

@@ -309,7 +309,9 @@ classdef diffOp < linearOp
                         B = [Vp;Bmat1;Bmat2];
                         Dmats{i} = A \ B;
                     else
-                        Dmats{i}= Dmats_fd{i};
+                        Dmats{i} = Dmats_fd{i};
+                        V = speye(dat.dims(i));             
+                        Vp = speye(dat.dims(i));
                     end
                     c = 0.00001/(0.1+sigest{obj.stateind});
                     Localderiv = obj.antisymconvmtx(flipud(c_fd{i}(:,end)),dat.dims(i));

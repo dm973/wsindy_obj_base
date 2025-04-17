@@ -104,7 +104,7 @@ classdef WS_opt < handle
             WS = obj.ols(WS);
         end
 
-        function [WS,loss_wsindy,its,G,b] = MSTLS_0(obj,WS,varargin)
+        function [WS,loss_wsindy,its,G,b,col_trim_inds] = MSTLS_0(obj,WS,varargin)
             if isempty(WS.G)
                 WS.cat_Gb;
             end
@@ -121,10 +121,11 @@ classdef WS_opt < handle
             addParameter(p,'toggle_jointthresh',1);
             addParameter(p,'linregargs',repmat({{'verbose','none'}},WS.numeq,1));
             addParameter(p,'incl_inds',cell(WS.numeq,1));
+            addParameter(p,'coltrim',0);
             parse(p,WS,varargin{:})
 
             maxits = p.Results.maxits;
-            alpha = (p.Results.alpha*mean(arrayfun(@(L)length(L.terms),WS.lib))+1)^-1;
+            alpha = arrayfun(@(L) (p.Results.alpha*length(L.terms)+1)^-1,WS.lib);
             gamma = p.Results.gamma;
             M_diag = p.Results.M_diag;
             if isempty(M_diag)
@@ -133,6 +134,7 @@ classdef WS_opt < handle
             toggle_jointthresh = p.Results.toggle_jointthresh;
             linregargs = p.Results.linregargs;
             incl_inds = p.Results.incl_inds;
+            toggle_coltrim = p.Results.coltrim;
 
             lambdas = p.Results.lambdas;
             if isempty(lambdas)
@@ -149,13 +151,36 @@ classdef WS_opt < handle
             W = cell(length(G),1);
             its = zeros(length(G),1);
             loss_wsindy = zeros(length(G)+1,length(lambdas));
+            col_trim_inds = {};
             for k=1:length(G)
                 W_all = zeros(size(G{k},2),length(lambdas));
                 for l=1:length(lambdas)
-                    [W_all(:,l),~] = obj.sparsifyDynamics(G{k}, b{k}, lambdas(l), gamma, M_diag{k}, maxits, toggle_jointthresh, linregargs{k}, incl_inds{k});
+                    if toggle_coltrim
+                        if l>1
+                            inds = coltrim(G{k}(:,col_trim_inds{k,l-1}),1-toggle_coltrim*lambdas(l),b{k},incl_inds_temp);
+                            inds = col_trim_inds{k,l-1}(inds);
+                        else
+                            inds = coltrim(G{k},1-toggle_coltrim*lambdas(l),b{k},incl_inds{k});
+                        end
+                        col_trim_inds{k,l} = inds;
+                        G_temp = G{k}(:,inds);
+                        M_temp = M_diag{k}(inds);
+                        if ~isequal(incl_inds{k},'all')
+                            incl_inds_temp = find(ismember(inds,incl_inds{k}));
+                        else
+                            incl_inds_temp = incl_inds{k};
+                        end
+                    else
+                        G_temp = G{k};
+                        inds = 1:size(G_temp,2);
+                        M_temp = M_diag{k};
+                        incl_inds_temp = incl_inds{k};
+                    end
+                    [w_temp,~] = obj.sparsifyDynamics(G_temp, b{k}, lambdas(l), gamma, M_temp, maxits, toggle_jointthresh, linregargs{k},incl_inds_temp);
+                    W_all(inds,l) = w_temp;
                 end
-                proj_cost = alpha*vecnorm(G{k}*(W_all./M_diag{k}-W_ls{k}))/GW_ls{k};
-                overfit_cost = (1-alpha)*arrayfunvec(W_all,@(w)length(find(w)),1)/length(find(W_ls{k}));
+                proj_cost = alpha(k)*vecnorm(G{k}*(W_all./M_diag{k}-W_ls{k}))/GW_ls{k};
+                overfit_cost = (1-alpha(k))*arrayfunvec(W_all,@(w)length(find(w)),1)/length(find(W_ls{k}));
                 lossvals = proj_cost + overfit_cost;
                 W{k} = W_all(:,find(lossvals == min(lossvals),1));
                 loss_wsindy(k,:) = lossvals;
@@ -164,7 +189,7 @@ classdef WS_opt < handle
             WS.weights = cell2mat(W);
         end
 
-        function [WS,loss_wsindy,its,G,b] = MSTLS(obj,WS,varargin)
+        function [WS,loss_wsindy,its,G,b,r_inds] = MSTLS(obj,WS,varargin)
             if isempty(WS.G)
                 WS.cat_Gb;
             end
@@ -203,7 +228,7 @@ classdef WS_opt < handle
             parse(p,WS,varargin{:})
 
             maxits = p.Results.maxits;
-            alpha = (p.Results.alpha*mean(arrayfun(@(L)length(L.terms),WS.lib))+1)^-1;
+            alpha = arrayfun(@(L) (p.Results.alpha*length(L.terms)+1)^-1,WS.lib);
             gamma = p.Results.gamma;
             M_diag = p.Results.M_diag;
             if isempty(M_diag)
@@ -278,23 +303,24 @@ classdef WS_opt < handle
             end
 
             W = cell(length(G),1);
+            r_inds = cell(length(G),length(lambdas));
             its = zeros(length(G),1);
             loss_wsindy = zeros(length(G)+1,length(lambdas));
             for k=1:length(G)
                 W_all = zeros(size(G{k},2),length(lambdas));
                 for l=1:length(lambdas)
                     if isempty(Aeq)
-                        [W_all(:,l),~] = sparsifyDynamics(G{k}, b{k}, lambdas(l), 1, gamma, M_diag{k}, maxits, toggle_jointthresh, reg_inds{k});
+                        [W_all(:,l),~,r_inds{k,l}] = sparsifyDynamics(G{k}, b{k}, lambdas(l), 1, gamma, M_diag{k}, maxits, toggle_jointthresh, reg_inds{k});
                     else
-                        [W_all(:,l),~] = sparsifyDynamics_lineq(G{k}, b{k}, lambdas(l), 1, gamma, M_diag{k}, maxits, toggle_jointthresh, reg_inds{k},Aeq{k},deq{k});
+                        [W_all(:,l),~,r_inds{k,l}] = sparsifyDynamics_lineq(G{k}, b{k}, lambdas(l), 1, gamma, M_diag{k}, maxits, toggle_jointthresh, reg_inds{k},Aeq{k},deq{k});
                     end
                 end
                 if ~isempty(M_diag)
-                    proj_cost = alpha*vecnorm(G{k}*(W_all./M_diag{k}-W_ls{k}))/GW_ls{k};
+                    proj_cost = alpha(k)*vecnorm(G{k}*(W_all./M_diag{k}-W_ls{k}))/GW_ls{k};
                 else
-                    proj_cost = alpha*vecnorm(G{k}*(W_all-W_ls{k}))/GW_ls{k};
+                    proj_cost = alpha(k)*vecnorm(G{k}*(W_all-W_ls{k}))/GW_ls{k};
                 end
-                overfit_cost = (1-alpha)*arrayfunvec(W_all,@(w)length(find(w)),1)/length(find(W_ls{k}));
+                overfit_cost = (1-alpha(k))*arrayfunvec(W_all,@(w)length(find(w)),1)/length(find(W_ls{k}));
                 lossvals = proj_cost + overfit_cost;            
                 W{k} = W_all(:,find(lossvals == min(lossvals),1));
                 loss_wsindy(k,:) = lossvals;
@@ -899,6 +925,7 @@ classdef WS_opt < handle
         end
 
         function [w,its,thrs_EL] = sparsifyDynamics(obj,G,b,lambda,gamma,M,maxits,toggle_jointthresh,linregargs,incl_inds)
+
             [~,nn] =size(G);
             n = size(b,2);
             if isempty(M)
@@ -914,25 +941,35 @@ classdef WS_opt < handle
             
             w = M.*obj.linreg(G,b,linregargs{:});
             if toggle_jointthresh == 1
+                % threshold based on JCP paper
                 bnds = norm(b)./vecnorm(G)'.*M;
                 LBs = lambda*max(1,bnds);
                 UBs = 1/lambda*min(1,bnds);
             elseif toggle_jointthresh == 2
+                % threshold only on term magnitude
                 bnds = norm(b)./vecnorm(G)'.*M;
                 LBs = lambda*bnds;
                 UBs = 1/lambda*bnds;
             elseif toggle_jointthresh == 3
-                bnds =norm(b)^2./abs(b'*G)'.*M;
+                % threshold based on JCP but with term projection
+                bnds = norm(b)^2./abs(b'*G)'.*M;
                 bnds2 = norm(b)./vecnorm(G)'.*M;
-                UBs = 1/lambda*bnds2;
+                UBs = 1/lambda*bnds2; % upper bound by term magnitude
+                LBs = lambda*bnds; % lower bound by projection
+            elseif toggle_jointthresh == 4
+                % threshold only on term projection
+                bnds = norm(b)^2./abs(b'*G)'.*M;
                 LBs = lambda*bnds;
+                UBs = 1/lambda*bnds;
             else
+                % threshold only Hamiltonian coarse-graining - should be
+                % robust to small coefficients
                 bnds = norm(b)./vecnorm(G)'.*M;
                 w0 = abs(b'*G);
                 nrms = vecnorm(G);
                 alpha = max(w0./nrms.^2.*M');
                 beta = max(w0./nrms/norm(b));
-                LBs = lambda*max(alpha,bnds*beta);
+                LBs = lambda*max(alpha,bnds*beta); 
                 UBs = 1/lambda*min(alpha,bnds*beta);
             end
             thrs_EL = [LBs bnds UBs];

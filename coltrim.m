@@ -2,26 +2,47 @@ function inds = coltrim(A,lam,y,exinds)
     if ~exist('exinds','var')
         exinds = [];
     end
+    if isequal(exinds,'all')
+        exinds = 1:size(A,2);
+    end
     B = abs(((A'*A-diag(diag(A'*A)))./vecnorm(A))./(vecnorm(A)'));
-    proj = abs(y'*A./vecnorm(A));
-    inds = 1:length(B);
     C = B > lam;
-    check = 1;
-    while all([any(C(:)) length(inds)>1 check])
-        ind2 = inds(sum(C,2)~=0);            
-        ind2 = ind2(~ismember(ind2,exinds));
-        [~,I] = min(proj(ind2));
-        if ~isempty(I)
-            a = find(ind2(I)==inds);
-            inds = inds([1:a-1 a+1:end]);
-            B = B([1:a-1 a+1:end],[1:a-1 a+1:end]);
-            C = C([1:a-1 a+1:end],[1:a-1 a+1:end]);
-        else
-            check = 0;
+    proj = abs(y'*A./vecnorm(A));
+    inds = true(size(B,1),1);
+   
+    C(vecnorm(A)==0,:) = 0;
+    C(:,vecnorm(A)==0) = 0;
+    inds(vecnorm(A)==0) = false;
+
+    meth = 2;
+    k=1;
+    while all([any(C(:)), k<size(B,1)*(size(B,1)-1), length(find(inds))>2])
+    
+        if meth == 0 % take out minimum projection term from set of all correlated terms
+            inds_corr = find(sum(C,2)~=0);
+            [~,a] = min(proj(inds_corr));
+            a = inds_corr(a);
+            
+        elseif meth == 1 % take out term with maximum sum correlations
+            [~,a] = max(sum(C,2));
+    
+        elseif meth == 2 % find maximally correlated pair, take out term with lower projection
+            [r, ~] = find(B == max(B(C)));
+            [~,a] = min(proj(r));
+            a = r(a);
         end
-        % C = B>lam;
+    
+        if ~ismember(a,exinds)
+            C(:,a) = 0;
+            C(a,:) = 0;
+            inds(a) = false;
+        end
+
         % imagesc(C)
         % drawnow
-        % inds
+        k=k+1;
     end
+    
+    inds = find(inds);
+
 end
