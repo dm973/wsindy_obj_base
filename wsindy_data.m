@@ -408,18 +408,47 @@ classdef wsindy_data < handle
             end        
         end
 
-        function obj = set_scales(obj,scales)
-            if or(isequal(scales,'Ubar'),~isequal(length(scales),obj.nstates+obj.ndims))
-                if isempty(scales)
-                    scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
-                    scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
-                    scales(obj.nstates+1:end) = cellfun(@(x)mean(abs(x(:))),obj.grid);
-                elseif isequal(scales,1)
-                    scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
-                elseif isequal(scales,'Ubar')
-                    scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
-                    scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+        function obj = plotFFTtf(obj,tf,startfig)
+            for j=1:obj.nstates
+                for i=1:obj.ndims
+                    figure(startfig+1+(j-1)*obj.ndims+i-1)
+                    [Ufft,xx] = obj.get_fft(j,i);
+                    NN = length(xx);
+                    k = obj.ks(j,i);
+                    Ufft = Ufft/max(Ufft);
+                    tf_dat = abs(tf{min(end,j)}.Cfsfft{i}(1,1:NN));
+                    tf_dat = tf_dat/max(tf_dat);
+                    semilogy(0:NN-1,Ufft,'k-',0:NN-1,tf_dat,'r-',k,Ufft(k),'gd','markersize',10)
+                    legend({'Ufft','tf','k'})
                 end
+            end     
+        end
+
+        function obj = set_scales(obj,scl,varargin)
+            p = inputParser;
+            addParameter(p,'nrm',[]);
+            addParameter(p,'val',2);
+            parse(p,varargin{:})
+            
+            nrm = p.Results.nrm;
+            val = p.Results.val;
+
+            scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
+
+            if ~isempty(nrm)
+                scales(1:obj.nstates) = cellfun(@(U)norm(U(:),nrm)/val,obj.Uobs);
+                scales(obj.nstates+1:end) = cellfun(@(x)norm(x(:),nrm)/val,obj.grid);
+            else
+    
+                if or(isequal(scl,'Ubar'),~isequal(length(scl),obj.nstates+obj.ndims))
+                    if isempty(scl)
+                        scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+                        scales(obj.nstates+1:end) = cellfun(@(x)mean(abs(x(:))),obj.grid);
+                    elseif isequal(scl,'Ubar')
+                        scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+                    end
+                end
+
             end
 
             obj.Uobs = arrayfun(@(i)obj.Uobs{i}/scales(i),1:obj.nstates,'un',0);

@@ -29,7 +29,11 @@ function inds = coltrim(A,lam,y,exinds)
         elseif meth == 2 % find maximally correlated pair, take out term with lower projection
             [r, ~] = find(B == max(B(C)));
             [~,a] = min(proj(r));
-            a = r(a);
+            if ismember(r(a),exinds)
+                a = r(max(mod(a+1,2),1));
+            else
+                a = r(a);
+            end            
         end
     
         if ~ismember(a,exinds)
