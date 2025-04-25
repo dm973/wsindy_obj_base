@@ -65,9 +65,9 @@ classdef testfcn < handle
             addParameter(p,'mtmax',default_mtmax);
             addParameter(p,'pre_conv',default_pre_conv);
             addParameter(p,'Kmax',default_Kmax);
+            addParameter(p,'toggle_config',true);
             parse(p,dat,varargin{:})
 
-            obj.dv = cellfun(@(g)mean(diff(g)),dat.grid);
             obj.phifuns = p.Results.phifuns;
 
             if isempty(obj.phifuns)
@@ -118,14 +118,25 @@ classdef testfcn < handle
                 end
             end
 
-            obj.get_rads(dat);
-            obj.get_subinds(dat);
+            if p.Results.toggle_config
+                obj.config(dat);
+            end
 
         end
 
     end
 
     methods
+
+        function obj = config(obj,dat)
+            obj.set_dv(dat);
+            obj.get_rads(dat);
+            obj.get_subinds(dat);
+        end
+
+        function obj = set_dv(obj,dat)
+            obj.dv = cellfun(@(g)mean(diff(g)),dat.grid);
+        end
 
         function vec = test(obj,dat,term)
             if isequal(class(term),'double')

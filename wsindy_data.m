@@ -428,27 +428,40 @@ classdef wsindy_data < handle
             p = inputParser;
             addParameter(p,'nrm',[]);
             addParameter(p,'val',2);
+            addParameter(p,'lib',[]);
+            addParameter(p,'tf',[]);
             parse(p,varargin{:})
             
             nrm = p.Results.nrm;
             val = p.Results.val;
+            lib = p.Results.lib;
+            tf = p.Results.tf;
 
             scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
-
-            if ~isempty(nrm)
-                scales(1:obj.nstates) = cellfun(@(U)norm(U(:),nrm)/val,obj.Uobs);
-                scales(obj.nstates+1:end) = cellfun(@(x)norm(x(:),nrm)/val,obj.grid);
-            else
-    
-                if or(isequal(scl,'Ubar'),~isequal(length(scl),obj.nstates+obj.ndims))
-                    if isempty(scl)
-                        scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
-                        scales(obj.nstates+1:end) = cellfun(@(x)mean(abs(x(:))),obj.grid);
-                    elseif isequal(scl,'Ubar')
-                        scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+            try            
+                pd = max(cell2mat(cellfun(@(ttf) cellfun(@(p) p(end),ttf.param),tf(:),'un',0)),[],1);
+                md = max(cell2mat(cellfun(@(ttf) ttf.rads(:)',tf(:),'un',0)),[],1);
+                dx = obj.dv(:)';
+                betad = max(cell2mat(arrayfun(@(L) max(cell2mat(L.tags(:)),[],1), lib(:), 'un',0)),[],1);
+                betad = betad(1:obj.nstates);
+                ad = max(cell2mat(arrayfun(@(L) max(cell2mat(cellfun(@(tt)tt.linOp.difftags,L.terms(:),'un',0)),[],1), lib(:), 'un',0)),[],1);
+                scales_u = arrayfun(@(b,i) (norm(obj.Uobs{i}(:).^b)/norm(obj.Uobs{i}(:)))^(1/b),betad,1:obj.nstates);
+                scales_x = arrayfun(@(p,m,d,a) 1./((nchoosek(p,a/2)*factorial(a))^(1/a)/(m*d)),pd,md,dx,ad);
+                scales = [scales_u,scales_x];
+            catch
+                if ~isempty(nrm)
+                    scales(1:obj.nstates) = cellfun(@(U)norm(U(:),nrm)/val,obj.Uobs);
+                    scales(obj.nstates+1:end) = cellfun(@(x)norm(x(:),nrm)/val,obj.grid);
+                else        
+                    if or(isequal(scl,'Ubar'),~isequal(length(scl),obj.nstates+obj.ndims))
+                        if isempty(scl)
+                            scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+                            scales(obj.nstates+1:end) = cellfun(@(x)mean(abs(x(:))),obj.grid);
+                        elseif isequal(scl,'Ubar')
+                            scales(1:obj.nstates) = cellfun(@(U)mean(abs(U(:))),obj.Uobs);
+                        end
                     end
                 end
-
             end
 
             obj.Uobs = arrayfun(@(i)obj.Uobs{i}/scales(i),1:obj.nstates,'un',0);
