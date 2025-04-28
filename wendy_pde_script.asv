@@ -52,8 +52,8 @@ Uobj.coarsen([-64]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.5;
-rng('shuffle') % comment out to reproduce results
+noise_ratio = 0.2;
+rng(1);%('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
 

@@ -426,7 +426,6 @@ classdef wsindy_model < handle
                     end
                 end 
             end
-            % disp(['completed.'])
         end
 
         function obj = get_L(obj)

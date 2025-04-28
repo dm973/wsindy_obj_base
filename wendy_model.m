@@ -4,6 +4,7 @@ classdef wendy_model < wsindy_model
         H
         biasfac
         bias
+        biasG
         statcorrect
     end
 
@@ -14,6 +15,7 @@ classdef wendy_model < wsindy_model
             obj.H = [];
             obj.biasfac = {};
             obj.bias = [];
+            obj.biasG= [];
             obj.statcorrect = statcorrect;
         end
     end
@@ -31,7 +33,8 @@ classdef wendy_model < wsindy_model
                             hess = obj.lib(i).terms{k}.get_hess;
                             if any(arrayfun(@(tm)tm.coeff~=0,hess))
                                 hess = arrayfun(@(tm)...
-                                    spdiags(reshape(tm.evalterm(obj.dat(j)),[],1),0,prod(obj.dat(j).dims),prod(obj.dat(j).dims)),...
+                                    spdiags(reshape(tm.evalterm(obj.dat(j)),[],1),...
+                                        0,prod(obj.dat(j).dims),prod(obj.dat(j).dims)),...
                                     hess,'uni',0);
                                 V = obj.tf{j}{i}.get_testmat(obj.lib(i).terms{k}.linOp);
                                 A = cell2mat(hess(:)');
@@ -89,49 +92,26 @@ classdef wendy_model < wsindy_model
             obj.H = 1/4*(obj.H*(obj.get_H_R*obj.H'));
         end
 
-        function obj = get_biasfac(obj)
-            if isempty(obj.biasfac)
-                obj.biasfac = repmat({arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0)},obj.ntraj,1);
-            end
-
-            S = obj.get_supp;
-            for j=1:obj.ntraj
-                obj.dat(j).get_R0;
-                for i=1:obj.numeq
-                    for k=1:length(obj.lib(i).terms)
-                        if and(ismember(k,S{i}),isempty(obj.biasfac{j}{i}{k}))
-                            lap = obj.lib(i).terms{k}.get_lap;
-                            Y = arrayfun(@(d2) d2.evalterm(obj.dat(j)),lap(:),'uni',0);
-                            Y = cellfun(@(d2) d2(:),Y,'uni',0);
-                            Y = cell2mat(Y);
-                            Y = obj.dat(j).R0*Y;
-                            x = prod(obj.dat(j).dims);
-                            msk = spdiags(ones(x,obj.nstates),0:x:x*(obj.nstates-1),x,length(Y));
-                            V = obj.tf{j}{i}.get_testmat(obj.lib(i).terms{k}.linOp);
-                            obj.biasfac{j}{i}{k} = V*(msk*Y);
+        function biasGs = get_biasG(obj)
+            if isempty(obj.biasG)
+                biasGs = obj.Gs;
+                S = obj.get_supp;
+                for i=1:obj.ntraj
+                    sigs = obj.dat(i).estimate_sigma;
+                    for j=1:obj.numeq
+                        biasGs{i}{j} = biasGs{i}{j}*0; 
+                        for k=1:length(obj.lib(j).terms)
+                            if ismember(k,S{j})
+                                lap = obj.lib(j).terms{k}.get_lap;
+                                G_ij_k = arrayfun(@(tt,ss) ss^2*obj.tf{i}{j}.test(obj.dat(i),tt), lap, cell2mat(sigs(:)'),'un',0);
+                                biasGs{i}{j}(:,k) = 0.5*sum(cell2mat(G_ij_k),2);
+                            end
                         end
-                    end
-                end 
-            end
-            % disp(['completed.'])
-        end
-
-        function obj = get_bias(obj)
-            if isempty(obj.biasfac)
-                obj.get_biasfac;
-            end
-            w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
-            obj.bias = cellfun(@(bc)cellfun(@(b)b*0,bc,'uni',0),obj.bs,'uni',0);
-            S = obj.get_supp;
-            for i=1:obj.ntraj
-                for j=1:obj.numeq
-                    for k=1:length(S{j})
-                        obj.bias{i}{j} = obj.bias{i}{j} + w{j}(S{j}(k))*obj.biasfac{i}{j}{S{j}(k)};
-                    end
+                    end 
                 end
+                obj.biasG = cellfun(@(Gs) blkdiag(Gs{:}), biasGs,'uni',0);
+                obj.biasG = cell2mat(obj.biasG);
             end
-            obj.bias = cellfun(@(b)cell2mat(b),obj.bias,'un',0);
-            obj.bias = -1/2*cell2mat(obj.bias(:));
         end
 
         function obj = add_weights(obj,w,varargin)
@@ -156,10 +136,12 @@ classdef wendy_model < wsindy_model
 
         function [G,b,RT] = apply_cov(obj,G,b,diag_reg)
             if obj.statcorrect(2)==1
-                if isempty(obj.bias)
-                    obj.get_bias;
-                end
-                b = b - obj.bias;
+                % if isempty(obj.bias)
+                %     obj.get_bias;
+                % end
+                % b = b - obj.bias;
+                obj.get_biasG;
+                G = G - obj.biasG;
             end
 
             if obj.statcorrect(1)>0
@@ -225,6 +207,50 @@ classdef wendy_model < wsindy_model
             end
         end
 
+        function obj = get_biasfac(obj)
+            if isempty(obj.biasfac)
+                obj.biasfac = repmat({arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0)},obj.ntraj,1);
+            end
+
+            S = obj.get_supp;
+            for j=1:obj.ntraj
+                obj.dat(j).get_R0;
+                for i=1:obj.numeq
+                    for k=1:length(obj.lib(i).terms)
+                        if and(ismember(k,S{i}),isempty(obj.biasfac{j}{i}{k}))
+                            lap = obj.lib(i).terms{k}.get_lap;
+                            Y = arrayfun(@(d2) d2.evalterm(obj.dat(j)),lap(:),'uni',0);
+                            Y = cellfun(@(d2) d2(:),Y,'uni',0);
+                            Y = cell2mat(Y);
+                            Y = obj.dat(j).R0*Y;
+                            x = prod(obj.dat(j).dims);
+                            msk = spdiags(ones(x,obj.nstates),0:x:x*(obj.nstates-1),x,length(Y));
+                            V = obj.tf{j}{i}.get_testmat(obj.lib(i).terms{k}.linOp);
+                            obj.biasfac{j}{i}{k} = V*(msk*Y);
+                        end
+                    end
+                end 
+            end
+            % disp(['completed.'])
+        end
+
+        function obj = get_bias(obj)
+            if isempty(obj.biasfac)
+                obj.get_biasfac;
+            end
+            w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
+            obj.bias = cellfun(@(bc)cellfun(@(b)b*0,bc,'uni',0),obj.bs,'uni',0);
+            S = obj.get_supp;
+            for i=1:obj.ntraj
+                for j=1:obj.numeq
+                    for k=1:length(S{j})
+                        obj.bias{i}{j} = obj.bias{i}{j} + w{j}(S{j}(k))*obj.biasfac{i}{j}{S{j}(k)};
+                    end
+                end
+            end
+            obj.bias = cellfun(@(b)cell2mat(b),obj.bias,'un',0);
+            obj.bias = -1/2*cell2mat(obj.bias(:));
+        end
 
     end
 end
