@@ -852,6 +852,113 @@ classdef wsindy_model < handle
             diff_tags = unique(diff_tags,'rows');
         end
 
+        function A = get_stability_matrix(obj,varargin)
+
+            p = inputParser;
+            addParameter(p,'w',[]);
+            parse(p,varargin{:})            
+            w = p.Results.w;
+            if isempty(w)
+                w = obj.weights;
+            end
+            [~,~,~,Fs] = obj.get_functional_forms_vec('w',w);
+            A = @(q,k)0;
+            diff_tags = obj.get_diffs;
+            
+            %%% note this assumes left-hand side is first time derivative lhs_ord = 1;
+            for k=1:size(diff_tags,1)
+                diff_tag = diff_tags(k,:);
+                A = @(q,k) A(q,k) + prod((1i*k).^diff_tag(1:end-1))*squeeze(obj.eval_Jf_vec(Fs,diff_tag,q));
+            end
+
+        end
+
+        function [Acell,k2,ks,kmesh,kmesh_uns] = get_homog_state_matrices(obj,u0,varargin)
+            p = inputParser;
+            addParameter(p,'w',[]);
+            parse(p,varargin{:})            
+            w = p.Results.w;
+            if isempty(w)
+                w = obj.weights;
+            end
+            A = obj.get_stability_matrix('w',w);
+
+            k_max = obj.dat.dims(1:end-1)/2;
+            ks = arrayfun(@(k) (0:k),k_max,'un',0);
+            kmesh = cell(obj.dat.ndims-1,1);
+            [kmesh{:}] = ndgrid(ks{:});
+            kmesh_uns = cell2mat(cellfun(@(g)g(:),kmesh(:)','un',0));
+            k2 = vecnorm(kmesh_uns,2,2);
+            kmesh = kmesh_uns*cellfun(@(g)2*pi/range(g),obj.dat.grid(1:end-1)') ;
+
+            Acell = arrayfun(@(k)A(u0,kmesh(k,:)),1:size(kmesh,1),'un',0);
+        end
+
+        function [unstable_modes,eigs_all,k2,ks,kmesh] = get_homog_state_stability(obj,u0,varargin)
+            p = inputParser;
+            addParameter(p,'w',[]);
+            parse(p,varargin{:})            
+            w = p.Results.w;
+            if isempty(w)
+                w = obj.weights;
+            end
+
+            [Acell,k2,ks,kmesh,kmesh_uns] = obj.get_homog_state_matrices(u0,'w',w);
+            
+            eigs_all = zeros(size(kmesh,1),obj.nstates);
+            unstable_modes = {};
+            for k = 1:size(kmesh,1)
+                [V,E] = eigs(Acell{k});
+                E = diag(E);
+                eigs_all(k,:) = E;
+                if any(real(E)>0)
+                    ind = find(real(E)>0);
+                    unstable_modes = [unstable_modes;{V(:,ind),kmesh_uns(k,:),E(ind)}];
+                end
+            end
+        end
+
+        function plot_homog_state_stability(obj,u0,fignum,varargin)
+
+            p = inputParser;
+            addParameter(p,'w',[]);
+            parse(p,varargin{:})            
+            w = p.Results.w;
+            if isempty(w)
+                w = obj.weights;
+            end
+            [~,eigs_all,k2,ks] = obj.get_homog_state_stability(u0,'w',w);
+            maxk2_unstable = max(k2(max(real(eigs_all),[],2)>0));
+            most_unstable = max(real(eigs_all),[],2);
+            [~,most_unstable] = max(most_unstable);
+            most_unstable = k2(most_unstable);
+            
+            figure(fignum);clf
+            subplot(3,1,1)
+                histogram(real(eigs_all(:)))
+                title('real eigs')
+            subplot(3,1,2)
+                histogram(imag(eigs_all(:)))
+                title('imag eigs')
+            subplot(3,1,3)
+                if obj.dat.ndims==2
+                    plot(ks{1},max(real(eigs_all),[],2),'o-',ks{1},ks{1}*0,'--')
+                    if ~isempty(maxk2_unstable)
+                        xlim([0 maxk2_unstable+2])
+                    end
+                elseif obj.dat.ndims==3
+                    surf(ks{:},reshape(max(real(eigs_all),[],2),length(ks{1}),[]),'edgecolor','none')
+                    view([0 90])
+                    colorbar
+                end
+            
+            if isempty(maxk2_unstable)    
+                title('no unstable modes')
+            else
+                title(['max unstable mode:',num2str(maxk2_unstable), '; most unstable mode:',num2str(most_unstable)])
+            end
+        end
+
     end
 
 end
