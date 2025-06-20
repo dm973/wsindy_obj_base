@@ -122,6 +122,7 @@ classdef WS_opt < handle
             addParameter(p,'linregargs',repmat({{'verbose','none'}},WS.numeq,1));
             addParameter(p,'incl_inds',cell(WS.numeq,1));
             addParameter(p,'coltrim',0);
+            addParameter(p,'subset_eq',1:length(G));
             parse(p,WS,varargin{:})
 
             maxits = p.Results.maxits;
@@ -135,11 +136,14 @@ classdef WS_opt < handle
             linregargs = p.Results.linregargs;
             incl_inds = p.Results.incl_inds;
             toggle_coltrim = p.Results.coltrim;
+            subset_eq = p.Results.subset_eq;
 
             lambdas = p.Results.lambdas;
             if isempty(lambdas)
                 if toggle_jointthresh==1
                     lambdas = 10.^(linspace(max(log10(abs(b{1}'*G{1}./vecnorm(G{1}).^2)'))-4,max(log10(abs(b{1}'*G{1}./vecnorm(G{1}).^2)')),100));
+                elseif toggle_jointthresh==4
+                    lambdas = abs(b{1}'*G{1}./vecnorm(G{1}).^2)';
                 else
                     lambdas = 10.^linspace(-4,0,100);
                 end
@@ -148,11 +152,14 @@ classdef WS_opt < handle
             W_ls = cellfun(@(g,b,LRA) obj.linreg(g,b,LRA{:}), G, b, linregargs, 'uni',0);
             GW_ls = cellfun(@(g,w) norm(g*w), G,W_ls, 'uni',0);            
 
-            W = cell(length(G),1);
+            W = cellfun(@(G) zeros(size(G,2),1), G,'un',0);
+            if isempty(WS.weights)
+                WS.weights = cell2mat(W(:));
+            end
             its = zeros(length(G),1);
             loss_wsindy = zeros(length(G)+1,length(lambdas));
             col_trim_inds = {};
-            for k=1:length(G)
+            for k=subset_eq
                 W_all = zeros(size(G{k},2),length(lambdas));
                 for l=1:length(lambdas)
                     if toggle_coltrim
@@ -184,9 +191,10 @@ classdef WS_opt < handle
                 lossvals = proj_cost + overfit_cost;
                 W{k} = W_all(:,find(lossvals == min(lossvals),1));
                 loss_wsindy(k,:) = lossvals;
+                WS.weights(sum(cellfun(@(G)size(G,2),G(1:k-1)))+1:sum(cellfun(@(G)size(G,2),G(1:k)))) = W{k};
             end
             loss_wsindy(end,:) = lambdas;
-            WS.weights = cell2mat(W);
+            % WS.weights = cell2mat(W);
         end
 
         function [WS,loss_wsindy,its,G,b,r_inds] = MSTLS(obj,WS,varargin)
@@ -442,8 +450,16 @@ classdef WS_opt < handle
             x0 = p.Results.x0;
             Aineq = p.Results.Aineq;
             bineq = p.Results.bineq;
+            if isempty(Aineq)
+                Aineq = [];
+                bineq = [];
+            end
             Aeq = p.Results.Aeq;
             beq = p.Results.beq;
+            if isempty(Aeq)
+                Aeq = [];
+                beq = [];
+            end
             LB = p.Results.LB;
             UB = p.Results.UB;
             consttol = p.Results.consttol;
@@ -485,6 +501,9 @@ classdef WS_opt < handle
                     end
                     options = optimoptions('quadprog','Display',verbosity,'ConstraintTolerance',consttol,'OptimalityTolerance',opttol,'MaxIterations',maxits);
                     x = quadprog((A'*A),-(A'*b),Aineq,bineq,Aeq,beq,LB,UB,x0,options);
+                    if isempty(x)
+                        x = zeros(size(A,2),1);
+                    end
                     x = obj.inject_sparse(x,S);
                 else
                     x = x0;
@@ -864,66 +883,6 @@ classdef WS_opt < handle
             WS.weights = cell2mat(wtemp);
         end
 
-        function WS = subspacePursuitCV(obj,WS,s,ncv,toggle_discrep)
-            if ~exist('toggle_discrep','var')
-                toggle_discrep = 0;
-            end
-
-            if isequal(class(WS),'wsindy_model')
-                WS.cat_Gb;            
-                G = WS.G; b = WS.b;
-                if and(toggle_discrep==1,~isempty(WS.weights))
-                    b = cellfun(@(g,b) b-g*WS.weights,G,b,'uni',0);
-                    G = cellfun(@(g) g(:,~WS.weights),G,'uni',0);
-                elseif and(toggle_discrep==2,~isempty(WS.weights))
-                    b = cellfun(@(g,b) b-g*WS.weights,G,b,'uni',0);
-                end 
-            elseif isequal(class(WS),'cell')
-                G = WS{1};
-                b = WS{2};
-                toggle_discrep = 0;
-            end
-
-            wtemp = cell(length(b),1);
-            for j=1:length(b)
-                supportList            = cell(min(s,size(G{j},2)),1);
-                crossValidationErrList = zeros(min(s,size(G{j},2)),1);
-                WColumnNorm            = vecnorm(G{j});
-            
-                for i=1:min(s,size(G{j},2))
-                    support       = SPV2(G{j} * diag(1./WColumnNorm), b{j} ./norm(b{j},2),i);
-                    supportList{i}   = support;
-                    crossValidationErrList(i) = computeCrossValidationErrV2_dam(support, G{j}, b{j}, ncv);
-                end
-                [~, CrossIdx]=min(crossValidationErrList);
-                supportPred = supportList{CrossIdx}';
-    
-                if isequal(class(WS),'wsindy_model') 
-                    if and(toggle_discrep==1,~isempty(WS.weights))
-                        wtemp{j} = WS.reshape_w{j};
-                        wtemp2 = zeros(size(G{j},2),1);
-                        wtemp2(supportPred) = G{j}(:,supportPred) \ b{j};
-                        wtemp(~wtemp) = wtemp2;
-                    elseif and(toggle_discrep==2,~isempty(WS.weights))
-                        wtemp{j} = WS.reshape_w{j};
-                        wtemp{j}(supportPred) = wtemp{j}(supportPred) + G{j}(:,supportPred) \ b{j};
-                    else
-                        wtemp{j} = zeros(size(G{j},2),1);
-                        wtemp{j}(supportPred) = G{j}(:,supportPred) \ b{j};
-                    end
-                elseif isequal(class(WS),'cell')
-                    wtemp{j} = zeros(size(G{j},2),1);
-                    wtemp{j}(supportPred) = G{j}(:,supportPred) \ b{j};
-                end
-            end
-            if isequal(class(WS),'wsindy_model')
-                WS.weights = cell2mat(wtemp);
-            elseif isequal(class(WS),'cell')
-                WS = wtemp(:)';
-            end
-            semilogx(lambdas,lossvals)
-        end
-
         function [w,its,thrs_EL] = sparsifyDynamics(obj,G,b,lambda,gamma,M,maxits,toggle_jointthresh,linregargs,incl_inds)
 
             [~,nn] =size(G);
@@ -1154,6 +1113,209 @@ classdef WS_opt < handle
                 end
                 its=its+1;
             end
+        end
+    
+        function [WS,CV_all,supports_all] = subspacePursuitCV(obj,WS,varargin)
+
+            inp = inputParser;
+            addParameter(inp,'s',15);
+            addParameter(inp,'ncv',25);
+            addParameter(inp,'toggle_discrep',0);
+            addParameter(inp,'M_diag',[]);
+            addParameter(inp,'linregargs',{});
+
+            parse(inp,varargin{:});  
+            
+            s = inp.Results.s;
+            ncv = inp.Results.ncv;
+            toggle_discrep = inp.Results.toggle_discrep;
+            M_diag = inp.Results.M_diag;
+            linregargs = inp.Results.linregargs;
+
+            if isequal(class(WS),'wsindy_model')
+                WS.cat_Gb;            
+                G = WS.G; b = WS.b;
+                if and(toggle_discrep==1,~isempty(WS.weights))
+                    b = cellfun(@(g,b) b-g*WS.weights,G,b,'uni',0);
+                    G = cellfun(@(g) g(:,~WS.weights),G,'uni',0);
+                elseif and(toggle_discrep==2,~isempty(WS.weights))
+                    b = cellfun(@(g,b) b-g*WS.weights,G,b,'uni',0);
+                end 
+            elseif isequal(class(WS),'cell')
+                G = WS{1};
+                b = WS{2};
+                toggle_discrep = 0;
+            end
+
+            if isempty(linregargs)
+                linregargs = cellfun(@(g)[],G,'un',0);
+            end
+
+            wtemp = cell(length(b),1);
+            supports_all = cell(length(b),1);
+            CV_all = cell(length(b),1);
+            for j=1:length(b)
+                supportList            = cell(min(s,size(G{j},2)),1);
+                crossValidationErrList = zeros(min(s,size(G{j},2)),1);
+                WColumnNorm            = vecnorm(G{j});
+            
+                for i=1:min(s,size(G{j},2))
+                    support       = obj.SPV2(G{j} * diag(1./WColumnNorm), b{j} ./norm(b{j},2), i, linregargs{j});
+                    supportList{i}   = support;
+                    crossValidationErrList(i) = obj.computeCrossValidationErrV2_dam(support, G{j}, b{j}, ncv);
+                end
+                [~, CrossIdx]=min(crossValidationErrList);
+                supportPred = supportList{CrossIdx}';
+    
+                S = logical(zeros(size(G{j},2),1));
+                S(supportPred) = 1;
+                wtemp{j} = obj.linreg(G{j}(:,supportPred),b{j},linregargs{j}{:},'S',S);
+                % if isequal(class(WS),'wsindy_model') 
+                %     if and(toggle_discrep==1,~isempty(WS.weights))
+                %         wtemp{j} = WS.reshape_w{j};
+                %         wtemp2 = zeros(size(G{j},2),1);
+                %         wtemp2(supportPred) = G{j}(:,supportPred) \ b{j};
+                %         wtemp(~wtemp) = wtemp2;
+                %     elseif and(toggle_discrep==2,~isempty(WS.weights))
+                %         wtemp{j} = WS.reshape_w{j};
+                %         wtemp{j}(supportPred) = wtemp{j}(supportPred) + G{j}(:,supportPred) \ b{j};
+                %     else
+                %         wtemp{j} = zeros(size(G{j},2),1);
+                %         wtemp{j}(supportPred) = G{j}(:,supportPred) \ b{j};
+                %     end
+                % elseif isequal(class(WS),'cell')
+                %     wtemp{j} = zeros(size(G{j},2),1);
+                %     wtemp{j}(supportPred) = G{j}(:,supportPred) \ b{j};
+                % end
+                supports_all{j} = supportList;
+                CV_all{j} = crossValidationErrList;
+            end
+            if ~isempty(M_diag)
+                wtemp = cellfun(@(w,M) M.*w, wtemp,M_diag,'un',0);
+            end
+            if isequal(class(WS),'wsindy_model')
+                WS.weights = cell2mat(wtemp);
+            elseif isequal(class(WS),'cell')
+                WS = wtemp(:)';
+            end
+        end
+
+        function support = SPV2(obj,W,b,sparsity,linregargs)
+            % "Subspace Pursuit for Compressive Sensing: Closing the
+            %  Gap Between Performance and Complexity"%
+            
+            % INPUT
+            % W        :  feature matrix
+            % sparsity :  sparsity level
+            
+            % OUTPUT
+            % support  :  a list of index
+            
+            itermax = 15;
+            [~,N]=size(W);
+            
+            cv = abs( b'*W );
+            [~, cv_index] = sort(cv,'descend');
+            
+            Lda = cv_index(1:sparsity);
+            Phi_Lda = W(:,Lda);
+            
+            % x = (Phi_Lda'*Phi_Lda)\(Phi_Lda' * b);
+
+            S = logical(zeros(N,1));
+            S(Lda) = 1;
+            x = obj.linreg(Phi_Lda,b,linregargs{:},'S',S);
+
+            r = b - Phi_Lda*x(Lda);
+            res = norm(r);
+            iter = 0;
+            
+            if (res < 1e-12)
+                X = x;
+                support = find(X);
+                return
+            end
+            
+            usedlda = zeros(1,N);
+            usedlda(Lda)=1;
+            
+            for iter = 1:itermax
+                res_old = res;
+                %%Step1 find T^{\prime} and add it to \hat{T}
+                cv = abs( r'*W );
+                [~, cv_index] = sort(cv,'descend');
+                Sga = union(Lda, cv_index(1:sparsity));
+                Phi_Sga = W(:,Sga);
+                
+                %%% find the most significant K indices
+                S = logical(zeros(N,1));
+                S(Sga) = 1;
+                x_temp = obj.linreg(Phi_Sga,b,linregargs{:},'S',S);
+                x_temp = x_temp(S);
+                % x_temp = (Phi_Sga'*Phi_Sga)\(Phi_Sga' * b);        
+                [~, x_temp_index] = sort( abs(x_temp) , 'descend' );
+                Lda = Sga(x_temp_index(1:sparsity));
+                Phi_Lda = W(:,Lda);
+                usedlda(Lda)=1;
+                
+                %%% calculate the residue
+                S = logical(zeros(N,1));
+                S(Lda) = 1;
+                x = obj.linreg(Phi_Lda,b,linregargs{:},'S',S);
+                % x = (Phi_Lda'*Phi_Lda)\(Phi_Lda' * b);
+                r = b - Phi_Lda*x(Lda);
+                res = norm(r);
+            
+                X=x;
+                if ( res/res_old >= 1 || res < 1e-12)
+                    support = find(X);
+                    return
+                end
+            end
+            support = find(X);
+        
+        end
+
+        function [err] = computeCrossValidationErrV2_dam(obj,ind, A, b, ntrials)
+            % script for computing cross validation error
+            errCrossAccu = zeros(1,ntrials);
+            for jj = 1:ntrials
+                e=obj.computeCVErrV4(ind,A, b);
+                errCrossAccu(jj) =  e;
+            end
+            err = mean(errCrossAccu)  + std(errCrossAccu);
+            end
+            
+        function [err]=computeCVErrV4(obj,support,W,b,ratio)
+            if ~exist('ratio','var')
+                ratio = 1/100;
+            end
+            
+            n     = size(b,1);
+            inds  = randperm(n);
+            W     = W(inds,:);
+            b     = b(inds);
+            
+            % split the data into two parts
+            endOfPart1 = floor(n*ratio);
+            
+            IdxPart1  = 1:endOfPart1;
+            IdxPart2  = endOfPart1+1:n;
+            
+            
+            % compute e1
+            coeff            = zeros(size(W,2),1);
+            coeff(support)   = W(IdxPart1,support)\b(IdxPart1);
+            e1               = norm(W(IdxPart2,:)*coeff - b(IdxPart2) ,2)/norm(b(IdxPart2),2);
+            
+            % compute e2
+            coeff            = zeros(size(W,2),1);
+            coeff(support)   = W(IdxPart2,support)\b(IdxPart2);
+            e2               = norm(W(IdxPart1,:)*coeff - b(IdxPart1) ,2)/norm(b(IdxPart1),2);
+            
+            % compute weighted error
+            err              = e1 * (1-ratio) + e2 * ratio;
+            
         end
 
     end

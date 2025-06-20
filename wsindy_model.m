@@ -70,6 +70,12 @@ classdef wsindy_model < handle
                 obj.lhsterms = arrayfun(@(i)term('ftag',E(i,:),'linOp',[zeros(1,obj.ndims-1) 1]),(1:obj.nstates)','uni',0);
             elseif isequal(class(obj.lhsterms),'double')
                 obj.lhsterms = arrayfunvec(obj.lhsterms,@(L)term('ftag',L(1:obj.nstates),'linOp',L(obj.nstates+1:end)),2,0);
+            elseif isequal(class(obj.lhsterms),'cell')
+                for n=1:length(obj.lhsterms)
+                    if isequal(class(obj.lhsterms{n}),'double')
+                        obj.lhsterms{n} = term('ftag',obj.lhsterms{n}(1:obj.nstates),'linOp',obj.lhsterms{n}(obj.nstates+1:end));
+                    end
+                end
             elseif isequal(class(obj.lhsterms),'diffOp')
                 obj.lhsterms = num2cell(obj.lhsterms);
             elseif any(cellfun(@(x) isequal(x,'absterm'),superclasses(obj.lhsterms)))
@@ -196,8 +202,10 @@ classdef wsindy_model < handle
             default_cator = obj.catm;
             p = inputParser;
             addParameter(p,'cat',default_cator);
+            addParameter(p,'datanorm',true);
             parse(p,varargin{:})
             cator = p.Results.cat;
+            datanorm = p.Results.datanorm;
 
             if isempty(obj.Gs)
                 obj.get_Gb;
@@ -214,8 +222,13 @@ classdef wsindy_model < handle
                 obj.G = repmat({[]},obj.numeq,1);
                 for n=1:obj.numeq
                     for m=1:obj.ntraj
-                        obj.b{n} = [obj.b{n};obj.bs{m}{n}];
-                        obj.G{n} = [obj.G{n};obj.Gs{m}{n}];
+                        if datanorm
+                            norml = norm(obj.bs{m}{n});
+                        else
+                            norml = 1;
+                        end
+                        obj.b{n} = [obj.b{n};obj.bs{m}{n}/norml];
+                        obj.G{n} = [obj.G{n};obj.Gs{m}{n}/norml];
                     end
                 end
             elseif isequal(cator,'blkdiag')
