@@ -499,6 +499,16 @@ classdef WS_opt < handle
                     if ~isempty(UB)
                         UB = UB(S);
                     end
+                    if isequal(verbosity,'None')
+                        % N1 = null(Aeq);
+                        % try
+                        %     N = null((Aineq*N1)');
+                        %     e = max(abs(bineq'*N));
+                        %     if e > 0
+                        %         disp(['NO FEASIBLE BOUNDARY POINT: e=',num2str(e)])
+                        %     end
+                        % end
+                    end
                     options = optimoptions('quadprog','Display',verbosity,'ConstraintTolerance',consttol,'OptimalityTolerance',opttol,'MaxIterations',maxits);
                     x = quadprog((A'*A),-(A'*b),Aineq,bineq,Aeq,beq,LB,UB,x0,options);
                     if isempty(x)

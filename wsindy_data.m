@@ -424,6 +424,15 @@ classdef wsindy_data < handle
             end     
         end
 
+        function obj = undo_scales(obj)
+            if ~isempty(obj.scales)
+                obj.Uobs = cellfun(@(U,s)U*s,obj.Uobs,num2cell(obj.scales(1:obj.nstates)),'un',0);
+                obj.grid = cellfun(@(x,s)x*s,obj.grid,num2cell(obj.scales(obj.nstates+1:end)),'un',0);
+                obj.dv = obj.dv(:)'.*obj.scales(obj.nstates+1:end);
+                obj.scales = ones(1,obj.nstates+obj.ndims);
+            end
+        end
+
         function obj = set_scales(obj,scl,varargin)
             p = inputParser;
             addParameter(p,'nrm',[]);
