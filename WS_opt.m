@@ -109,6 +109,9 @@ classdef WS_opt < handle
                 WS.cat_Gb;
             end
             G = WS.G; b = WS.b;
+            if isempty(WS.weights)
+                WS.weights = zeros(sum(cellfun(@(G)size(G,2), WS.Gs{1})), 1 );
+            end
             default_M_diag = cellfun(@(G) ones(size(G,2),1),G,'uni',0);
 
             p = inputParser;
@@ -123,6 +126,8 @@ classdef WS_opt < handle
             addParameter(p,'incl_inds',cell(WS.numeq,1));
             addParameter(p,'coltrim',0);
             addParameter(p,'subset_eq',1:length(G));
+            addParameter(p,'toggle_discrep',0);
+
             parse(p,WS,varargin{:})
 
             maxits = p.Results.maxits;
@@ -136,6 +141,7 @@ classdef WS_opt < handle
             linregargs = p.Results.linregargs;
             incl_inds = p.Results.incl_inds;
             toggle_coltrim = p.Results.coltrim;
+            toggle_discrep = p.Results.toggle_discrep;
             subset_eq = p.Results.subset_eq;
 
             lambdas = p.Results.lambdas;
@@ -149,13 +155,23 @@ classdef WS_opt < handle
                 end
             end
 
+            if and(toggle_discrep==1,~isempty(WS.weights))                
+                b = cellfun(@(g,b,w) b-g*w,G,b,WS.reshape_w,'uni',0);
+                G = cellfun(@(g,w) g(:,~w),G,WS.reshape_w,'uni',0);
+                % fix!!!
+                % if ~isempty(Aeq)
+                %     deq = cellfun(@(d,A,w,M) d-(A.*M')*w,deq,Aeq,WS.reshape_w,M_diag,'uni',0);
+                %     Aeq = cellfun(@(A,w) A(:,~w),Aeq,WS.reshape_w,'uni',0);
+                % end
+                M_diag = cellfun(@(M,w)M(~w),M_diag,WS.reshape_w,'uni',0);
+            elseif and(toggle_discrep==2,~isempty(WS.weights))
+                b = cellfun(@(g,b,w) b-g*w,G,b,WS.reshape_w,'uni',0);
+            end
+
             W_ls = cellfun(@(g,b,LRA) obj.linreg(g,b,LRA{:}), G, b, linregargs, 'uni',0);
             GW_ls = cellfun(@(g,w) norm(g*w), G,W_ls, 'uni',0);            
 
             W = cellfun(@(G) zeros(size(G,2),1), G,'un',0);
-            if isempty(WS.weights)
-                WS.weights = cell2mat(W(:));
-            end
             its = zeros(length(G),1);
             loss_wsindy = zeros(length(G)+1,length(lambdas));
             col_trim_inds = {};
@@ -191,10 +207,20 @@ classdef WS_opt < handle
                 lossvals = proj_cost + overfit_cost;
                 W{k} = W_all(:,find(lossvals == min(lossvals),1));
                 loss_wsindy(k,:) = lossvals;
-                WS.weights(sum(cellfun(@(G)size(G,2),G(1:k-1)))+1:sum(cellfun(@(G)size(G,2),G(1:k)))) = W{k};
+                weight_inds = sum(cellfun(@(G)size(G,2),WS.Gs{1}(1:k-1)))+1:sum(cellfun(@(G)size(G,2),WS.Gs{1}(1:k)));
+
+                if and(toggle_discrep==1,any(WS.weights(weight_inds)))
+                    wtemp = WS.weights(weight_inds);
+                    wtemp(~WS.weights(weight_inds)) = W{k};
+                    WS.weights(weight_inds) = wtemp;
+                elseif and(toggle_discrep==2,any(WS.weights(weight_inds)))
+                    WS.weights(weight_inds) = WS.weights(weight_inds)+W{k};
+                else
+                    WS.weights(weight_inds) = W{k};
+                end
+
             end
             loss_wsindy(end,:) = lambdas;
-            % WS.weights = cell2mat(W);
         end
 
         function [WS,loss_wsindy,its,G,b,r_inds] = MSTLS(obj,WS,varargin)
@@ -469,6 +495,10 @@ classdef WS_opt < handle
             verbosity = p.Results.verbose;
 
             if any(S)
+                if size(A,2)~=length(find(S))
+                    A = A(:,S);
+                end
+
                 if isempty(x0)
                     if diff(size(A))>=0
                         % 
@@ -499,16 +529,16 @@ classdef WS_opt < handle
                     if ~isempty(UB)
                         UB = UB(S);
                     end
-                    if isequal(verbosity,'None')
-                        % N1 = null(Aeq);
-                        % try
-                        %     N = null((Aineq*N1)');
-                        %     e = max(abs(bineq'*N));
-                        %     if e > 0
-                        %         disp(['NO FEASIBLE BOUNDARY POINT: e=',num2str(e)])
-                        %     end
-                        % end
-                    end
+                    % if isequal(verbosity,'None')
+                    %     N1 = null(Aeq);
+                    %     try
+                    %         N = null((Aineq*N1)');
+                    %         e = max(abs(bineq'*N));
+                    %         if e > 0
+                    %             disp(['NO FEASIBLE BOUNDARY POINT: e=',num2str(e)])
+                    %         end
+                    %     end
+                    % end
                     options = optimoptions('quadprog','Display',verbosity,'ConstraintTolerance',consttol,'OptimalityTolerance',opttol,'MaxIterations',maxits);
                     x = quadprog((A'*A),-(A'*b),Aineq,bineq,Aeq,beq,LB,UB,x0,options);
                     if isempty(x)
@@ -1331,4 +1361,3 @@ classdef WS_opt < handle
     end
 
 end
-

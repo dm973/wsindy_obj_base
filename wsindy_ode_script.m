@@ -1,7 +1,7 @@
 %% load data
 nstates = 4;
 tol_ode = 10^-10;
-t=linspace(0,10,100);
+t = linspace(0,5,100);
 p = [-1,1,3,2,nstates];
 rhs_true = @(x) rhs_p(t,x,p);
 
@@ -27,7 +27,7 @@ ntraj = length(Uobj);
 nstates = Uobj.nstates;
 M = Uobj.dims;
 
-noise_ratio = 0.01;
+noise_ratio = 0.1;
 rng('shuffle')
 rng_seed = rng().Seed; rng(rng_seed);
 arrayfun(@(U)U.addnoise(noise_ratio,'seed',rng_seed),Uobj);
