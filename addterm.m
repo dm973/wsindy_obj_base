@@ -58,6 +58,16 @@ classdef addterm < term
                 s = ['D^[',strrep(num2str(obj.linOp.difftags),'  ',','),']',s];
             end
         end
+
+        function m = get_scale(obj,scales)
+            m1 = obj.t1.get_scale(scales);
+            m2 = obj.t2.get_scale(scales);
+            if m1==m2
+                m = m1;
+            else
+                m = 1;
+            end
+        end
         
         function rhs = get_rhs(obj)
             if isempty(obj.linOp)

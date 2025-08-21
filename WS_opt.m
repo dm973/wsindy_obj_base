@@ -131,7 +131,12 @@ classdef WS_opt < handle
             parse(p,WS,varargin{:})
 
             maxits = p.Results.maxits;
-            alpha = arrayfun(@(L) (p.Results.alpha*length(L.terms)+1)^-1,WS.lib);
+            alpha = p.Results.alpha;
+            if ~isempty(alpha)
+                alpha = arrayfun(@(L) (p.Results.alpha*length(L.terms)+1)^-1,WS.lib);
+            else
+                alpha = repmat(0.5,size(WS.lib));
+            end
             gamma = p.Results.gamma;
             M_diag = p.Results.M_diag;
             if isempty(M_diag)

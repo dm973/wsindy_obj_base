@@ -88,7 +88,16 @@ classdef compterm < term
             rhs = @(varargin)obj.t2.fHandle(rhs1(varargin{:}));
         end
 
-
+        function m = get_scale(obj,scales)
+            m1 = obj.t1.get_scale(scales);
+            m2 = obj.t2.get_scale(scales);
+            if m2 ~= 1
+                m = m2*m1;
+            else
+                m = 1;
+            end
+        end
+        
     end
 
 end
