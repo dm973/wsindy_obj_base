@@ -128,7 +128,12 @@ classdef library < handle
                 for j=1:length(terms_in)
                     if or(dup,~any(cellfun(@(t)isequal(t,terms_in{j}),obj.tags)))
                         if isequal(class(terms_in{j}),'double')
-                            obj.terms = [obj.terms,{term('ftag',terms_in{j},'gradon',gradon)}];
+                            if length(terms_in{j})>obj.nstates
+                                obj.terms = [obj.terms,{term('ftag',terms_in{j}(1:obj.nstates),'linOp',terms_in{j}(obj.nstates+1:end),'gradon',gradon)}];
+                            else
+                                obj.terms = [obj.terms,{term('ftag',terms_in{j},'gradon',gradon)}];
+                            end
+                            
                             obj.tags = [obj.tags,terms_in(j)];
                     elseif isequal(class(terms_in{j}),'function_handle')
                             obj.terms = [obj.terms,{term('fHandle',terms_in{j},'gradon',gradon)}];

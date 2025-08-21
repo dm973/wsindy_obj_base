@@ -443,6 +443,9 @@ classdef wsindy_data < handle
             
             nrm = p.Results.nrm;
             val = p.Results.val;
+            if isscalar(val)
+                val = repmat({val},1,obj.nstates+obj.ndims);
+            end
             lib = p.Results.lib;
             tf = p.Results.tf;
 
@@ -462,8 +465,8 @@ classdef wsindy_data < handle
                     scales = [scales_u,scales_x];
                 catch
                     if ~isempty(nrm)
-                        scales(1:obj.nstates) = cellfun(@(U)norm(U(:),nrm)/val,obj.Uobs);
-                        scales(obj.nstates+1:end) = cellfun(@(x)norm(x(:),nrm)/val,obj.grid);
+                        scales(1:obj.nstates) = cellfun(@(U,v)norm(U(:),nrm)/v,obj.Uobs,val(1:obj.nstates));
+                        scales(obj.nstates+1:end) = cellfun(@(x,v)norm(x(:),nrm)/v,obj.grid,val(obj.nstates+1:end));
                     else        
                         if or(isequal(scl,'Ubar'),~isequal(length(scl),obj.nstates+obj.ndims))
                             if isempty(scl)

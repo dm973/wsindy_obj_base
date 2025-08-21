@@ -847,14 +847,26 @@ classdef wsindy_model < handle
             end
         end
 
-        function out = eval_ff(obj,tags,W,q)
+        function out = eval_ff(obj,tags,W,q,varargin)
+
+            IP = inputParser; 
+            addParameter(IP, 'ep', 1e-6);
+            parse(IP, varargin{:});
+            ep = IP.Results.ep; 
+
             if size(q,2)~=size(tags,2)
                 disp(['error: mismatch btw data dim and tems'])
             end
             out = zeros(size(q,1),1);
             for j=1:length(W)
                 if W(j)~=0
-                    out = out + W(j)*prod(q.^tags(j,:),2);
+                    if all(tags(j,:)>=0)
+                        out = out + W(j)*prod(q.^tags(j,:),2);
+                    else
+                        qt = q;
+                        qt(:,tags(j,:)<0) = max(qt(:,tags(j,:)<0),ep);
+                        out = out + W(j)*prod(qt.^tags(j,:),2); 
+                    end
                 end
             end
         end
