@@ -1,177 +1,137 @@
-%% load data
-% 
-% dr = '/home/danielmessenger/Dropbox/Boulder/research/data/WENDy_data/ode_data/'; 
-% odes={'wendydata_Logistic_Growth.mat',...
-%     'wendydata_Lotka_Volterra.mat',...
-%     'wendydata_FitzHugh-Nagumo.mat',...
-%     'wendydata_Hindmarsh-Rose.mat',...
-%     'wendydata_biochemM1.mat',...
-%     'wendydata_alphapinene.mat',};
-% filename = odes{4};
-% load([dr,filename],'t','x','x0','true_prod_tags','true_vec','params','rhs_p','features');
-% w_true = true_vec;
+%% generate data (Lorenz96)
 
-dr = '/home/danielmessenger/Dropbox/Boulder/research/data/WSINDy_ODE/'; 
-odes={'cubic_longtime.mat', ...
-    'lorenz_longtime.mat',...
-    'lotka_longtime.mat',...
-    'vanderpol_longtime.mat'};
-filename = odes{1};
-load([dr,filename],'t','x','weights');
-w_true = cell2mat(cellfun(@(w)w(:,end),weights(:),'uni',0));
-true_prod_tags = cellfun(@(w)w(:,1:end-1),weights,'uni',0);
+nstates = 5;       % Number of variables
+F0 = 8;            % Forcing term
+self_damping = 1;  % strength of self-damping
+nn_coupling = 1;   % strength of nearest-neighbor forcing
+pnn_coupling = 1;  % strength of next-nearest-neighbor damping
 
-%% get wsindy_data object
+M = 2048;
+tspan = linspace(0,10,M); % Time interval for integration
+x0 = F0 * ones(nstates, 1) + randn(nstates, 1) * 0.1; % ICs
 
+ode_function = @(t, x) lorenz96ode(t, x, nstates, F0, self_damping, nn_coupling, pnn_coupling); 
+[t, x] = ode45(ode_function, tspan, x0); % clean data
+[true_nz_weights,w_true] = trueweights_Lorenz96(nstates, F0, self_damping, nn_coupling, pnn_coupling); % true terms / coefficients
+true_prod_tags = cellfun(@(w)w(:,1:end-1),true_nz_weights,'uni',0);
+
+M_obs = 256; % number of observed timepoints
+noise_ratio = 0.50; % noise ratio
+
+%%% get wsindy_data object
 Uobj = wsindy_data(x,t);
-Uobj.coarsen(-1024);
+Uobj.coarsen(-M_obs); 
 
-noise_ratio = 0.3;
+%%% apply noise
 rng('shuffle')
 rng_seed = rng().Seed; rng(rng_seed);
 Uobj.addnoise(noise_ratio,'seed',rng_seed,'uniform',0);
 
-%% get lhs
+%% wendy parameters
 
-eq_order = 1;
-eqs = ':';
-E = eye(Uobj.nstates);
-lhs = arrayfun(@(i)term('ftag',E(i,:),'linOp',eq_order),(1:Uobj.nstates)','uni',0);
-lhsterms = lhs(eqs);
-numeq = length(lhsterms);
+%%% test function params
+tf_type = 'Cinf'; % 'pp'
+rad_type = 'FFT'; % 'FFT','direct','timefrac'
+toggle_SVD_tf = 1;
+toggle_strong_form = 0;
+subinds = -3; % subsample convolution for speed
 
-%% get lib tags
+%%% optimization alg params
+toggle_cov_1st_order = 1; % boolean to include linear covariance correction
+toggle_cov_2nd_order = 0.5; % noise ratio above which quadratic covariance correction applied 
+toggle_include_bias_correction = 1; % include iterative bias correction
+wendy_params = {'maxits',100,'ittol',10^-4,'diag_reg',10^-inf,'trim_rows',1};
 
-try
-    lib = cellfun(@(tm)library('tags',tm),true_prod_tags(eqs));
-catch
-    lib = cellfun(@(tm)library('terms',tm),features(eqs));
+%%% viewing params 
+toggle_compare = 1;
+tol_dd = 10^-12;
+
+%% WENDy
+
+%%% get library
+lib = cellfun(@(tm)library('tags',tm),true_prod_tags);
+
+%%% get test function
+if isequal(tf_type,'Cinf')
+    phifun = @(x) exp(-eta*(1-x.^2).^(-1)); 
+elseif isequal(tf_type,'pp')
+    phifun = @(x) (1-x.^2).^eta; 
 end
 
-%% get tf SVD
-
-nstates = Uobj.nstates;
-M = Uobj.dims;
-tobs = Uobj.grid{1};
-num_eq = length(lhs);
-subinds = 1;
-
-eta = 9;
-phifuns = {@(x) exp(-eta*(1-x.^2).^(-1)), @(x) (1-x.^2).^eta};
-center_scheme = 'uni';
-toggle_VVp_svd = 0.999;%NaN; % default NaN. 0, no SVD reduction; in (0,1), truncates Frobenious norm; NaN, truncates SVD according to cornerpoint of cumulative sum of singular values
-
-phifun = phifuns{1};                % defined in wendy_snf_params.m
-tf_meth = 'FFT';                     % 'mtmin','FFT','direct','timefrac': default 'mtmin'
-mt_params = 2.^(0:3);               % see get_rad.m:  default 2.^(0:3)
-
-tf = cellfun(@(ls)arrayfun(@(tf_param)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
-    'meth',tf_meth,'param',tf_param,'stateind',find(ls.ftag)),mt_params),lhs,'uni',0);
-mt = cell2mat(cellfun(@(t)[t.rads],tf(:),'uni',0));
-
-K_max = 5000;
-K_min = length(w_true);
-mt_max = max(floor((M-1)/2)-K_min,1);
-
-[cm,cn] = size(mt);
-K = min(floor(K_max/nstates/cm), M);
-
-V_cell = cell(num_eq,1);
-Vp_cell = cell(num_eq,1);
-for nn=1:num_eq
-    V_cell{nn} = [];
-    Vp_cell{nn} = [];
-    for j=1:length(mt_params)
-        V_cell{nn} = [V_cell{nn};tf{nn}(j).get_testmat(0)];
-    end
-    [V_cell{nn},Vp_cell{nn}] = VVp_svd(full(V_cell{nn}),K_min,tobs,toggle_VVp_svd);
-end
-
-tf = cellfun(@(V,Vp)testfcn_Vcell(Uobj,{{V,-Vp}},{[0 1]}),V_cell,Vp_cell,'uni',0);
-% 
-%% get test function
-
-toggle_strong_form=0;
-if toggle_strong_form==1
-    phifun = 'delta';
-    tf_meth = 'direct';
-    tf_param = 1;
+if toggle_SVD_tf % get tf SVD
+    K_max = 5000;
+    eta = 9;
+    subinds_svd = 1;
+    center_scheme = 'uni';
+    toggle_VVp_svd = 0.999; %NaN; % default NaN. 0, no SVD reduction; in (0,1), truncates Frobenious norm; NaN, truncates SVD according to cornerpoint of cumulative sum of singular values
+    mt_params = 2.^(0:3);               % see get_rad.m:  default 2.^(0:3)
+    K_min = length(w_true);
+    mt_max = max(floor((Uobj.dims-1)/2)-K_min,1);
+    
+    tf = get_VVp_tf(Uobj,phifun,subinds_svd,rad_type,mt_params,[],K_min,toggle_VVp_svd);
 else
-    phifun = 'pp';
-    tf_meth = 'FFT';
-    tau = 10^-10;
-    tauhat = 2;
-    tf_param = {[tau tauhat 1]};
-
-    % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
-    % tf_meth = 'timefrac';
-    % tf_param = [0.15];
-
-    phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
-    tf_meth = 'FFT';
-    tf_param = 2;
-
-    % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
-    % tf_meth = 'direct';
-    % tf_param = 15;
-
-    subinds = -3;
+    if toggle_strong_form==1
+        phifun = 'delta';
+        tf_meth = 'direct';
+        tf_param = 1; % centered 2nd order FD
+    else
+        %%% FFT radius selection, piecewise-poly test functions
+        if and(isequal(tf_type,'pp'), isequal(rad_type,'FFT'))
+            phifun = 'pp';
+            tau = 10^-10; tauhat = 2;
+            tf_param = {[tau tauhat 1]};
+        elseif isequal(rad_type,'timefrac')
+            tf_param = [0.15];
+        elseif isequal(rad_type,'FFT')
+            tf_param = 2;
+        elseif isequal(rad_type,'direct')
+            tf_param = 15;
+        end
+    end
+    tf = cellfun(@(ls)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
+        'meth',rad_type,'param',tf_param,'stateind',find(ls.ftag)),lhs,'uni',0);
 end
-tf = cellfun(@(ls)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
-    'meth',tf_meth,'param',tf_param,'stateind',find(ls.ftag)),lhs,'uni',0);
-
 fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
-%% build WSINDy linear system
 tic;
-WS = wendy_model(Uobj,lib,tf,[2 1],'lhsterms',lhsterms);
+%%% instantiate WENDy model
+wendy_mdel_class = [toggle_cov_1st_order+toggle_cov_2nd_order toggle_include_bias_correction];
+WS = wendy_model(Uobj,lib,tf,wendy_mdel_class);
 
-%% solve
-[WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,'maxits',100,'ittol',10^-4,'diag_reg',10^-inf,'trim_rows',1);
+%%% solve for coefficients
+[WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,wendy_params{:});
 total_time_wendy = toc;
 
 %% results
 
 Str_mod = WS.disp_mod;
-for j=1:numeq
+for j=1:WS.numeq
     fprintf('\n----------Eq %u----------\n',j)
+    fprintf('%s = ',WS.lhsterms{j}.get_str)
     cellfun(@(s)fprintf('%s\n',s),Str_mod{j})
 end
 
 if exist('true_nz_weights','var')
-    w_true = arrayfun(@(L)zeros(length(L.terms),1),WS.lib(:),'Un',0);
-    if ~isempty(true_S{1})
-        for j=1:numeq;w_true{j}(true_S{j}(:,1)) = true_S{j}(:,2);end
-    end
-    w_true = cell2mat(w_true);
     fprintf('\nRel. resid. =')
     fprintf('%1.2e ',norm(WS.res))
     E2 = norm(w_true-WS.weights)/norm(w_true);
     fprintf('\nCoeff err=%1.2e',E2)
 end
-%%% display results
+
 errs = vecnorm(w_its-w_true,2,1)/norm(w_true);
 disp(['-----------------'])
 disp([' '])
 disp(['rel L2 errs (OLS, WENDy)=',num2str(errs([1 end]))])
 disp(['runtime(s)=',num2str(total_time_wendy)])
 disp(['num its=',num2str(size(w_its,2))])
-% disp(['params(true,OLS,WENDy):'])
-% disp([w_true w_its(:,[1 end])])
-% disp(['rel. param errors(OLS,WENDy):'])
-% disp(abs(w_its(:,[1 end]) - w_true)./abs(w_true))
-% disp(['-----------------'])
 
 %% simulate learned and true reduced systems
-
-toggle_compare = 1;
 if toggle_compare==1
     w_plot = w_its(:,end);
     rhs_learned = WS.get_rhs('w',w_plot);
-    tol_dd = 10^-12;
     options_ode_sim = odeset('RelTol',tol_dd,'AbsTol',tol_dd*ones(1,Uobj.nstates));
 
-    t_train = Uobj.grid{1};% linspace(tred(1),tred(end),2000);
+    t_train = Uobj.grid{1};
     x0_reduced = Uobj.get_x0([]);
     [t_learned,x_learned]=ode15s(@(t,x)rhs_learned(x),t_train,x0_reduced,options_ode_sim);
     figure(7);clf
@@ -195,68 +155,39 @@ if toggle_compare==1
     end
 end
 
-%%
-%%%%%%%%%%%% WENDy: covariance-corrected ODE parameter estimation
-%%%%%%%%%%%% Copyright 2023, All Rights Reserved
-%%%%%%%%%%%% Code by Daniel Ames Messenger
-
-function [V,Vp] = VVp_svd(V,K_min,t,toggle_VVp_svd)
-    m = length(t);
-    dt = mean(diff(t));
-    [U,S,~] = svd(V',0);
-    sings = diag(S);
-    if toggle_VVp_svd>0
-        s = find(cumsum(sings.^2)/sum(sings.^2)>toggle_VVp_svd^2,1);
-        if isempty(s)
-            s = min(K,size(V,1));
-        end
-    else
-        corner_data = cumsum(sings)/sum(sings);
-        s = getcorner_svd(corner_data,(1:length(corner_data))');%
-        s = min(max(K_min,s),size(V,1));
+%% Functions
+function dXdt = lorenz96ode(t, X, n, F0, sd, nn, pnn)
+    % This function defines the Lorenz-96 ODE system.
+    dXdt = zeros(n, 1); % Initialize the derivative vector
+    for j = 1:n
+        % Implement the cyclic boundary conditions
+        X_prev2 = X(mod(j-3+n, n) + 1); % X_{j-2}
+        X_prev1 = X(mod(j-2+n, n) + 1); % X_{j-1}
+        X_next1 = X(mod(j, n) + 1);    % X_{j+1}
+    
+        dXdt(j) = (nn*X_next1 - pnn*X_prev2) * X_prev1 - sd*X(j) + F0;
     end
-    inds = 1:s;
-    V = U(:,inds)'*dt;
-
-    Vp = V';
-    Vp_hat = fft(Vp);
-    if mod(m,2)==0
-        k = [0:m/2 -m/2+1:-1]';
-    else
-        k = [0:floor(m/2) -floor(m/2):-1]';
-    end
-    Vp_hat = ((2*pi/m/dt)*1i*k).*Vp_hat;
-    if mod(m,2)==0
-        Vp_hat(m/2) = 0;        
-    end
-    Vp = real(ifft(Vp_hat))';
-
 end
 
-function tstarind = getcorner_svd(Ufft,xx)
-    NN = length(Ufft);
-    Ufft = Ufft/max(abs(Ufft))*NN;
-    errs = zeros(NN,1);
-    for k=1:NN
-        [L1,L2,m1,m2,b1,b2,Ufft_av1,Ufft_av2]=build_lines(Ufft,xx,k);
-        errs(k) = sum(abs((L1-Ufft_av1)./Ufft_av1)) + sum(abs((L2-Ufft_av2)./Ufft_av2)); % relative l1           
+function [true_nz_weights,w_true] = trueweights_Lorenz96(n, F0, sd, nn, pnn)
+
+    true_nz_weights = cell(n,1);
+
+    e = zeros(1,n);
+    e0 = e; % forcing
+    e1 = e; e1(1) = 1; % self damping
+    e2 = e; e2(2) = 1; e2(end) = 1;  % nearest neighbor forcing
+    e3 = e; e3(end) = 1; e3(end-1) = 1; % two previous damping
+    E = [e0;e1;e2;e3];
+
+    w = [F0;-sd;nn;-pnn];
+
+    true_nz_weights{1} = [E,w];
+
+    for j=2:n
+        true_nz_weights{j} = [circshift(E,j-1,2),w];
     end
-    [~,tstarind] = min(errs);
-end
 
-function [L1,L2,m1,m2,b1,b2,Ufft_av1,Ufft_av2]=build_lines(Ufft,xx,k)
-   NN = length(Ufft);
-   subinds1 = 1:k;
-   subinds2 = k:NN;
-   Ufft_av1 = Ufft(subinds1);
-   Ufft_av2 = Ufft(subinds2);
-   
-   [m1,b1,L1]=lin_regress(Ufft_av1,xx(subinds1));
-   [m2,b2,L2]=lin_regress(Ufft_av2,xx(subinds2));
-end
-
-function [m,b,L]=lin_regress(U,x)
-   m = (U(end)-U(1))/(x(end)-x(1));
-   b = U(1)-m*x(1);
-   L = U(1)+m*(x-x(1));
+    w_true = repmat(w,n,1); 
+    
 end
