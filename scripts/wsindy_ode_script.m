@@ -30,7 +30,7 @@ ntraj = length(Uobj);
 nstates = Uobj.nstates;
 M = Uobj.dims;
 
-noise_ratio = 0.05;
+noise_ratio = 0.01;
 rng('shuffle')
 rng_seed = rng().Seed; rng(rng_seed);
 arrayfun(@(U)U.addnoise(noise_ratio,'seed',rng_seed),Uobj);
@@ -123,7 +123,7 @@ end
 %% simulate learned and true reduced systems
 
 toggle_compare = 1:ntraj;
-toggle_display = 0;
+toggle_display = 1;
 if ~isempty(toggle_compare)
     rhs_learned = WS.get_rhs('w',cell2mat(W_nd));
     tol_dd = 10^-12;
@@ -146,7 +146,13 @@ if ~isempty(toggle_compare)
             for j=1:nstates
                 subplot(nstates,1,j)
                 plot(Uobj(i).grid{1},Uobj(i).Uobs{j},'b-o',t_learned,x_learned(:,j),'r-.','linewidth',2)
-                legend({'data','learned'})
+                try
+                    hold on
+                    plot(Uobj(i).grid{1},Uobj(i).Uobs{j}-Uobj(i).noise{j,1},'k-')
+                    legend({'data','learned','clean'})
+                catch
+                    legend({'data','learned'})
+                end
                 title(['rel err=',num2str(rel_forward_err(j))])
             end
         end

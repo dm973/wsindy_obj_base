@@ -1,122 +1,116 @@
 %% add wsindy_obj_base to path
 addpath(genpath('../'))
 
-clear all; close all; clc
-rng('shuffle'); 
-rng_seed = rng().Seed; rng(rng_seed);
-
 %% load data
 
 %%% choose PDE
-pde_num = 16; % set to 0 to run on pre-loaded dataset
-dr = '~/Dropbox/Boulder/research/data/WSINDy_PDE/datasets/';
-pde_names = {'burgers.mat',...          %1
-    'burgers_vis.mat',...               %2
-    'KS.mat',...                        %3
-    'KdV.mat',...                       %4
-    'transportDiff.mat',...             %5
-    'hyperKS.mat',...                   %6
-    'burgers_vis_cubic.mat',...         %7
-    'advecdiff_exact.mat',...           %8
-    'visburgs_etdrk4.mat',...           %9
-    'fkpp.mat',...                      %10
-    'sod.mat',...                       %11
-    'lin_schrod.mat',...                %12
-    'NLS.mat',...                       %13
-    'porous2.mat',...                   %14
-    'Sine_Gordon.mat',...               %15
-    'Nav_Stokes.mat',...                %16
+dr = 'pde_data/';
+pde_names = {'burgers.mat',...          
+             'KS.mat',...                
+             'NLS.mat',...               
+             'porous2.mat',...     
+             'sod_exact.mat',...
     };
+
+pde_num = 3; % set to 0 to run on pre-loaded dataset
+
 if pde_num~=0
     pde_name = pde_names{pde_num};
-    % load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
-    load([dr,pde_name],'U_exact','lhs','xs');true_nz_weights=[];
+    load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
 end
 
-%% get wsindy_data object
-
-%%% create data object
+%% create data object
 Uobj = wsindy_data(U_exact,xs);
-nstates = Uobj.nstates;
 
-%%% coarsen data
-Uobj.coarsen([-200 -200 -200]);
-fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);
+%%% coarsen spacetime grid
+Uobj.coarsen(3);
 
 %%% add noise
-noise_ratio = 0;
-rng('shuffle') % comment out to reproduce results
-rng_seed = rng().Seed; rng(rng_seed); 
-Uobj.addnoise(noise_ratio,'seed',rng_seed);
+Uobj.addnoise(0.4);
+
+%%% set library
+x_diffs = [0:4];%%% differential operators
+polys = [0:4]; trigs = [];%%% poly/trig functions
+custom_add =  {...  %%% custom terms using term algebra
+        term('fHandle',@(u,v) exp(sin(u+u.^2))),...                               % arbitrary term specified by function handle    
+        compterm(term('ftag',2), diffOp([1,0],'stateind',2)),...                   % term nonlinear in a derivative
+        prodterm(term('ftag',[-2i 2i]), diffOp([2,0],'stateind',1, 'nstates', 2)),...                 % product of two terms
+        addterm(diffOp([3,0],'stateind',1, 'nstates', 2), term('fHandle',@(u,v) tanh(u+v))),...              % sum of two terms
+    };
+
+custom_remove_f = {}; %{@(tag) all(tag(Uobj.nstates+1:Uobj.nstates+Uobj.ndims-1))};  % remove all cross derivatives
+custom_remove_t = {}; %[1 0 0 1 0 0; 0 1 0 0 1 0];                              % remove tags for divergence terms
+
+lib = get_lib(Uobj,polys,trigs,x_diffs,custom_add,custom_remove_f,custom_remove_t);
+
+%%% set testfcn 
+phifun = 'pp';
+tau = 10^-10; tauhat = 1;
+tf_param = {[tau tauhat max(x_diffs)]};
+tf_args = {'phifuns',phifun,'meth','FFT','param',tf_param,'subinds',-3};
+tf = testfcn(Uobj,tf_args{:});
 
 %%% scale data
-Uobj.set_scales(1);
-scales = Uobj.scales;
+Uobj.set_scales([],'lib',lib,'tf',tf);
+tf = testfcn(Uobj,tf_args{:});
 
-%% get lhs
+WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
 
-%%% define left-hand-side term
-lhsterms = lhs;
-numeq = size(lhsterms,1);
+%% solve for coefficients
 
-%% get library
-use_true = 0; % use pre-loaded terms
-
-%%% differential operators
-x_diffs = [0:2];
-
-%%% poly/trig functions
-polys = [0:2];
-trigs = [];
-
-%%% custom terms
-custom_terms = {};
-
-if ~use_true==1
-    [lib,true_S] = trig_poly_lib(polys,trigs,x_diffs,nstates,Uobj.ndims,numeq,true_nz_weights);
-    lib = repelem(lib,1,numeq);
-    if ~isempty(custom_terms); for j=1:numeq; lib(j).add_terms(custom_terms{j}); end;end
-else
-    [lib,true_S] = true_lib(nstates,true_nz_weights);
-end
-
-%% get test function
-toggle_strong_form=0;
-if toggle_strong_form==1
-    phifun = 'delta';
-    tf_meth = 'direct';
-    tf_param = max(x_diffs);
-else
-    phifun = 'pp';
-    tf_meth = 'FFT';
-    tau = 10^-16;
-    tauhat = 1;
-    tf_param = {[tau tauhat max(x_diffs)],[tau tauhat 1]};
-end
-tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,...
-    'meth',tf_meth,'param',tf_param,'stateind',find(lhsterms(i,1:nstates),1)),(1:size(lhsterms,1))','uni',0);
-fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
-
-%% build WSINDy linear system
-WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhsterms);
-
-%% MSTLS solve
-
-lambdas = 10.^linspace(-4,0,50);
-[WS,loss_wsindy,its,G,b] = WS_opt().MSTLS(WS,'lambda',lambdas);
-
-Mscale = arrayfun(@(L)L.get_scales(Uobj.scales),WS.lib(:),'un',0);%%% account for lhs!
+%%% get coefficient scale vector
+Mscale = arrayfun(@(L)L.get_scales(Uobj.scales),WS.lib(:),'un',0);
 lhs_scales = cellfun(@(t)t.get_scale(Uobj.scales),WS.lhsterms(:),'un',0);
-Mscale_W = cell2mat(cellfun(@(M,L)M/L,Mscale,lhs_scales,'un',0));
-WS.add_weights(WS.weights./Mscale_W);
+Mscale = cellfun(@(M,L)M/L,Mscale,lhs_scales,'un',0);
+Mscale_W = cell2mat(Mscale);
 
-%% view governing equations, MSTLS loss, learned model accuracy
+%%% optimization parameters
+lambdas = 10.^linspace(-4,0,25);
+threshold_scheme = 1;
+[WS,loss_wsindy,its,G,b] = WS_opt().MSTLS_0(WS,'lambdas',lambdas,'M_diag',Mscale,'toggle_jointthresh',threshold_scheme,'alpha',[]);
+
+%%% non-dimensionalized coefficients
+W_nd = cellfun(@(w,m)w./m,WS.reshape_w,Mscale,'un',0); 
+
+%% view results
+clc
+
+fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);
+fprintf('\ntf rads=');fprintf('%u ',WS.tf{1}{1}.rads);
+fprintf('\nsize G=');fprintf('%u ',size(WS.Gs{1}{1}));fprintf('\n')
+
+%%% display model
 Str_mod = WS.disp_mod;
-for j=1:numeq
+for j=1:WS.numeq
     fprintf('\n----------Eq %u----------\n',j)
-    cellfun(@(s)fprintf('%s\n',s),Str_mod{j})
+    fprintf('%s=',WS.lhsterms{j}.get_str)
+    cellfun(@(s)fprintf('%s \n',s),Str_mod{j})
 end
+cellfun(@(G)fprintf('cond(g)=%1.2e \n',cond(G)),WS.G)
 
+w_true = WS.reshape_w; w_true = cellfun(@(w)w*0,w_true,'un',0);
+for i=1:WS.numeq
+    tags = WS.lib(i).tags(:);
+    ii = ~cellfun(@(tt) isnumeric(tt),tags);
+    tags(ii) = repmat({zeros(1,Uobj.nstates+Uobj.ndims)},length(find(ii)),1);
+    w_true{i}(ismember(cell2mat(tags),true_nz_weights{i}(:,1:end-1),'rows')) = ...
+        true_nz_weights{i}(:,end);
+end
+cellfun(@(w,v)fprintf('coeff err=%1.2e\n',norm(w-v)/norm(v)),w_true,WS.reshape_w)
+cellfun(@(w,v)fprintf('supp rec=%i\n',isequal(find(w),find(v))),w_true,WS.reshape_w)
+
+
+%%% display data
+figure(1);clf;
+n=1;
+subplot(2,1,1)
+imagesc(Uobj.Uobs{n}(:,:,1))
+title('observed')
+subplot(2,1,2)
+imagesc(U_exact{n}(:,:,1))
+title('ground truth')
+
+%%% plot MSTLS loss
 figure(2);clf;
 f = min(loss_wsindy(1,:));
 g = min(loss_wsindy(2,loss_wsindy(1,:)==f));
@@ -125,37 +119,37 @@ for j=1:size(loss_wsindy,1)-1
     hold on
 end
 hold off
+legend({'MSTLS loss','optimal lambda'});
 
-if exist('true_nz_weights','var')
-    w_true = arrayfun(@(L)zeros(length(L.terms),1),WS.lib(:),'Un',0);
-    if ~isempty(true_S{1})
-        for j=1:numeq;w_true{j}(true_S{j}(:,1)) = true_S{j}(:,2);end
+figure(3);clf
+%%% plot residual
+for j=1:WS.numeq
+    subplot(WS.numeq,1,j)
+    plot([WS.bs{1}{j} WS.Gs{1}{j}*W_nd{j}])
+    legend('b','G*w')
+    title(['||G*w-b||/||b||=',num2str(norm(WS.Gs{1}{j}*W_nd{j}-WS.bs{1}{j})/norm(WS.bs{1}{j}))])
+end
+
+%% functions
+
+function lib = get_lib(Uobj,polys,trigs,x_diffs,custom_add,custom_remove_f,custom_remove_t)    
+    nstates = Uobj.nstates;
+    ndims = Uobj.ndims;
+    
+    tags = get_tags(polys,trigs,nstates);
+    lib = library('nstates',nstates);
+    
+    diff_tags = get_tags(x_diffs,[],ndims);
+    diff_tags = diff_tags(diff_tags(:,end)==0,:);
+    for j=1:size(tags,1)
+        for i=1:size(diff_tags,1)
+            if all([~and(sum(diff_tags(i,:))>0,...
+                    isequal(tags(j,:),zeros(1,nstates))),...
+                    ~cellfun(@(b)b([tags(j,:) diff_tags(i,:)]),custom_remove_f),...
+                    ~ismember_rows([tags(j,:) diff_tags(i,:)],custom_remove_t)])
+                lib.add_terms(term('ftag',tags(j,:),'linOp',diff_tags(i,:)));
+            end
+        end
     end
-    w_true = cell2mat(w_true);
-    Tps = tpscore(WS.weights,w_true);
-    fprintf('\nTPR=%1.2f',Tps)
-    res = cellfun(@(G,w,b,M,L) ((G.*M(:)')*w-(b*L))/norm(b*L),WS.G,WS.reshape_w,WS.b,Mscale,lhs_scales,'un',0);
-    res_mags = cellfun(@(r)norm(r),res);
-    fprintf('\nRel. resid. =')
-    fprintf('%1.2e ',res_mags)
-    E2 = norm(w_true-WS.weights)/norm(w_true);
-    fprintf('\nCoeff err=%1.2e',E2)
+    lib.add_terms(custom_add);
 end
-
-figure(1);clf
-m = 64;
-colormap([copper(m);cool(m)])
-for j=1:Uobj.nstates
-    subplot(Uobj.nstates,2,2*j-1)
-    imagesc(Uobj.Uobs{j})
-    subplot(Uobj.nstates,2,2*j)
-    imagesc(U_exact{j})
-end
-
-
-%% true model
-
-[lib_true,true_S] = true_lib(nstates,true_nz_weights); 
-WS_true = wsindy_model(Uobj,lib_true,tf,'lhsterms',lhsterms);
-WS_true.weights = cell2mat(cellfun(@(t)t(:,end),true_nz_weights(:),'uni',0));
-WS_true.cat_Gb;

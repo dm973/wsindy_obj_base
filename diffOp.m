@@ -32,8 +32,8 @@ classdef diffOp < linearOp
             obj.Dmats = [];
             obj.difftags = difftags;
             obj.ndims = length(difftags);
-            obj.nstates = p.Results.nstates;
             obj.stateind = p.Results.stateind;
+            obj.nstates = max(obj.stateind,p.Results.nstates);
             obj.fHandle = @(varargin)varargin{obj.stateind};
             obj.gradterms = p.Results.gradterms;
             obj.meth = p.Results.meth;
