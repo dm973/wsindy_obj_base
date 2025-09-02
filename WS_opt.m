@@ -260,7 +260,12 @@ classdef WS_opt < handle
 
             maxits = p.Results.maxits;
             toggle_sign = p.Results.toggle_sign;
-            alpha = arrayfun(@(L) (p.Results.alpha*length(L.terms)+1)^-1,WS(1).lib);
+            alpha = p.Results.alpha;
+            if ~isempty(alpha)
+                alpha = arrayfun(@(L) (p.Results.alpha*length(L.terms)+1)^-1,WS(1).lib);
+            else
+                alpha = repmat(0.5,size(WS(1).lib));
+            end
             gamma = p.Results.gamma;
             M_diags = p.Results.M_diag;
             if isempty(M_diags)
@@ -291,7 +296,11 @@ classdef WS_opt < handle
                 end
             end
 
-            W_ls = cellfun(@(G,b,LRA) cellfun(@(g,b,L) obj.linreg(g,b,L{:}), G,b,LRA,'un',0), Gs, bs, linregargs, 'un',0);
+            if ~isempty(linregargs)
+                W_ls = cellfun(@(G,b,LRA) cellfun(@(g,b,L) obj.linreg(g,b,L{:}), G,b,LRA,'un',0), Gs, bs, linregargs, 'un',0);
+            else
+                W_ls = cellfun(@(G,b) cellfun(@(g,b) obj.linreg(g,b), G,b,'un',0), Gs, bs, 'un',0);
+            end
             GW_ls = cellfun(@(G,W) cellfun(@(g,w) norm(g*w), G, W, 'uni',0), Gs, W_ls,'un',0);            
 
             W = cellfun(@(G) zeros(size(G,2),P), Gs{1},'un',0);
@@ -306,7 +315,11 @@ classdef WS_opt < handle
                 M_k = cellfun(@(M)M{k},M_diags,'Un',0);
                 GW_ls_k = cellfun(@(GW)GW{k},GW_ls,'Un',0);
                 W_ls_k = cellfun(@(W)W{k},W_ls,'Un',0);
-                linregargs_k = cellfun(@(L)L{k},linregargs,'Un',0);
+                if ~isempty(linregargs)
+                    linregargs_k = cellfun(@(L)L{k},linregargs,'Un',0);
+                else
+                    linregargs_k =[];
+                end
                 incl_inds_k = incl_inds{k};
                 
                 for l=1:length(lambdas)
@@ -740,7 +753,7 @@ classdef WS_opt < handle
             while and(check,its<maxits)
                 % disp(['iter=',num2str(its)])
                 if isequal(regmeth,'ols')
-                    [G,b,RT] = WS.apply_cov(G_0(:,sparse_inds),b_0,obj.diag_reg);
+                    [G,b,RT] = WS.apply_cov(G_0(:,sparse_inds),b_0,obj.diag_reg,sparse_inds);
                     w = obj.linreg(G,b,linregargs{:},'S',sparse_inds);
                     WS.add_weights(w,'toggle_cov',1);
                 elseif isequal(regmeth,'MSTLS')
@@ -945,12 +958,11 @@ classdef WS_opt < handle
             end
             l = find(lossvals == min(lossvals),1);  
             lambda = lambdas(l);
-            WS.weights = Wmat(:,l);
-            % if any(Wmat(:,l)~=0)
-            %     WS.weights = obj.linreg(G_0(:,Wmat(:,l)~=0),b_0,linregargs{:},'S',Wmat(:,l)~=0);
-            % else
-            %     WS.weights = Wmat(:,l);
-            % end
+            if any(Wmat(:,l)~=0)
+                WS.weights = obj.linreg(G_0(:,Wmat(:,l)~=0),b_0,linregargs{:},'S',Wmat(:,l)~=0);
+            else
+                WS.weights = Wmat(:,l);
+            end
 
             [WS,w_its,res,res_0,CovW,RT] = obj.wendy(WS,vw{:});
 
@@ -1124,8 +1136,11 @@ classdef WS_opt < handle
                 G = Gs{p};
                 b = bs{p};
                 M = Ms{p};
-                linregargs = linregargss{p};
-        
+                if ~isempty(linregargss)
+                    linregargs = linregargss{p};
+                else    
+                    linregargs  = {};
+                end
                 [~,nn] =size(G);
                 if isempty(M)
                     M = ones(nn,1);
@@ -1203,7 +1218,11 @@ classdef WS_opt < handle
                         G = Gs{p};
                         b = bs{p};
                         M = Ms{p};
-                        linregargs = linregargss{p};
+                        if ~isempty(linregargss)
+                            linregargs = linregargss{p};
+                        else    
+                            linregargs  = {};
+                        end
                         ws(:,p) = M.*obj.linreg(G(:,~smallinds),b,linregargs{:},'S',~smallinds);
                     end
                 end

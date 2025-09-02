@@ -134,14 +134,18 @@ classdef wendy_model < wsindy_model
             end
         end
 
-        function [G,b,RT] = apply_cov(obj,G,b,diag_reg)
+        function [G,b,RT] = apply_cov(obj,G,b,diag_reg,sparse_inds)
+            if ~exist('sparse_inds','var')
+                sparse_inds=1:size(G,2);
+            end
+            
             if obj.statcorrect(2)==1
                 % if isempty(obj.bias)
                 %     obj.get_bias;
                 % end
                 % b = b - obj.bias;
                 obj.get_biasG;
-                G = G - obj.biasG;
+                G = G - obj.biasG(:,sparse_inds);
             end
 
             if obj.statcorrect(1)>0

@@ -214,15 +214,15 @@ classdef testfcn < handle
         function obj = get_subinds(obj,dat)
             if isequal(class(obj.subinds),'double')
                 if isempty(obj.subinds)
-                    obj.subinds = arrayfun(@(i)1:max(1,floor(obj.rads(i)/4)):dat.dims(i)-2*obj.rads(i),1:dat.ndims,'uni',0);
+                    obj.subinds = arrayfun(@(i)1:max(1,floor(obj.rads(i)/4)):dat.dims(i)-2*max(obj.rads(i),1)+2,1:dat.ndims,'uni',0);
                 elseif isscalar(obj.subinds)
                     if obj.subinds>=0
                         obj.subinds = arrayfun(@(i)1:obj.subinds:dat.dims(i)-2*obj.rads(i),1:dat.ndims,'uni',0);
                     else
-                        obj.subinds = arrayfun(@(i)1:max(1,floor(obj.rads(i)/-obj.subinds)):dat.dims(i)-2*obj.rads(i),1:dat.ndims,'uni',0);
+                        obj.subinds = arrayfun(@(i)1:max(1,floor(obj.rads(i)/-obj.subinds)):dat.dims(i)-2*max(obj.rads(i),1)+2,1:dat.ndims,'uni',0);
                     end
                 elseif length(obj.subinds)==dat.ndims
-                    obj.subinds = arrayfun(@(i)1:obj.subinds(i):dat.dims(i)-2*obj.rads(i),1:dat.ndims,'uni',0);
+                    obj.subinds = arrayfun(@(i)1:obj.subinds(i):dat.dims(i)-2*max(obj.rads(i),1)+2,1:dat.ndims,'uni',0);
                 elseif isvector(obj.subinds)
                     obj.subinds = repmat({obj.subinds},1,dat.ndims);
                 end
@@ -257,7 +257,7 @@ classdef testfcn < handle
         function X = op(obj,X,Cfsinds)
             if isvector(X)
                 X = conv(X(:),obj.Cfs{1}(Cfsinds+1,:),'valid');
-                X = X(unique(min(obj.subinds{1},obj.dims(1)-2*obj.rads(1))));
+                X = X(unique(min(obj.subinds{1},obj.dims(1)-2*obj.rads(1) +2)));
             else
                 cols = arrayfun(@(k) obj.Cfsfft{k}(Cfsinds(k)+1,:), 1:obj.ndims, 'uni',0);
                 for k=1:obj.ndims
@@ -271,7 +271,7 @@ classdef testfcn < handle
                     end                
                     X = ifft(col_fft.*fft(permute(X,shift)));
                     inds = cell(obj.ndims,1);
-                    inds{1} = unique(min(obj.subinds{k},obj.dims(k)-2*obj.rads(k))); 
+                    inds{1} = unique(min(obj.subinds{k},obj.dims(k)-2*obj.rads(k)+2)); 
                     inds(2:obj.ndims) = repmat({':'},obj.ndims-1,1);
                     X = X(inds{:});
                     X = permute(X,shift_back);
@@ -283,15 +283,23 @@ classdef testfcn < handle
         function Cfs = phi_weights(obj,k,diffs)
             xf = linspace(-1,1,2*obj.rads(k)+1);
             if ~isequal(functions(obj.phifuns{k}).function,'@(x)x==0')
-                x = xf(2:end-1);
-                Cfs = zeros(length(diffs),2*obj.rads(k)+1);
+                if obj.rads(k)>0
+                    x = xf(2:end-1);
+                else
+                    x = xf;
+                end
+                Cfs = zeros(length(diffs),2*max(obj.rads(k),1)-1);
                 syms y;
                 for j=1:length(diffs)
                     Df = matlabFunction(diff(obj.phifuns{k}(y),diffs(j)));
-                    Cfs(j,2:end-1) = fillmissing(Df(x),'constant',Df(eps));
+                    Cfs(j,:) = fillmissing(Df(x),'constant',Df(eps));
                     inds = find(isinf(abs(Cfs(j,:))));
                     for i=1:length(inds)
-                        Cfs(j,inds(i)) = Df(xf(inds(i))-sign(xf(inds(i)))*eps);
+                        if obj.rads(k)>0
+                            Cfs(j,inds(i)) = Df(xf(inds(i))-sign(xf(inds(i)))*eps);
+                        else
+                            Cfs(j,inds(i)) = 1;
+                        end
                     end
                 end
             else
@@ -326,7 +334,7 @@ classdef testfcn < handle
                 l = @(m,k,N) log((2*m-1)./m.^2).*(4*pi^2*k^2*m.^2-3*N^2*tauhat^2)-2*N^2*tauhat^2*log(tau);
                 mstar1 = sqrt(3)/pi*N/2/k*tauhat;
                 mstar2 = 1/pi*tauhat*(N/2)/k*sqrt(log(exp(1)^3/tau^8));
-                m = floor(min(fzero(@(m)l(m,k,N), [mstar1 mstar2]),(N-1)/2));
+                m = floor(min(fzero(@(m)l(m,k,N), [mstar1 mstar2]),(N-2)/2));
                 p = max(maxd+1,ceil(log(tau)/log(1-(1-1/m)^2)));
                 phifun = @(x) (1-x.^2).^p;
             elseif isequal(phi_class,'Gauss')

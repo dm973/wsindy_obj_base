@@ -1,3 +1,6 @@
+%% add wsindy_obj_base to path
+addpath(genpath('../'))
+
 %% load data
 
 %%% choose PDE
@@ -9,7 +12,7 @@ pde_names = {'burgers.mat',...
              'sod_exact.mat',...
     };
 
-pde_num = 5; % set to 0 to run on pre-loaded dataset
+pde_num = 3; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
@@ -20,15 +23,15 @@ end
 Uobj = wsindy_data(U_exact,xs);
 
 %%% coarsen spacetime grid
-Uobj.coarsen([2,2]);
+Uobj.coarsen(3);
 
 %%% add noise
-Uobj.addnoise(0.25);
+Uobj.addnoise(0.4);
 
 %%% set library
-x_diffs = [0:5];%%% differential operators
+x_diffs = [0:4];%%% differential operators
 
-polys = [0:5]; trigs = [];%%% poly/trig functions
+polys = [0:4]; trigs = [];%%% poly/trig functions
 
 custom_add =  {...  %%% custom terms using term algebra
 ...    term('fHandle',@(u) exp(sin(u+u.^2))),...                               % arbitrary term specified by function handle    
@@ -44,13 +47,14 @@ lib = get_lib(Uobj,polys,trigs,x_diffs,custom_add,custom_remove_f,custom_remove_
 
 %%% set testfcn 
 phifun = 'pp';
-tau = 10^-16; tauhat = 2;
+tau = 10^-10; tauhat = 1;
 tf_param = {[tau tauhat max(x_diffs)]};
-tf = testfcn(Uobj,'phifuns',phifun,'meth','FFT','param',tf_param,'subinds',-3);
+tf_args = {'phifuns',phifun,'meth','FFT','param',tf_param,'subinds',-3};
+tf = testfcn(Uobj,tf_args{:});
 
 %%% scale data
 Uobj.set_scales([],'lib',lib,'tf',tf);
-tf = testfcn(Uobj,'phifuns',phifun,'meth','FFT','param',tf_param,'subinds',-3);
+tf = testfcn(Uobj,tf_args{:});
 
 WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
 
@@ -63,7 +67,7 @@ Mscale = cellfun(@(M,L)M/L,Mscale,lhs_scales,'un',0);
 Mscale_W = cell2mat(Mscale);
 
 %%% optimization parameters
-lambdas = 10.^linspace(-4,0,100);
+lambdas = 10.^linspace(-4,0,25);
 threshold_scheme = 1;
 [WS,loss_wsindy,its,G,b] = WS_opt().MSTLS_0(WS,'lambdas',lambdas,'M_diag',Mscale,'toggle_jointthresh',threshold_scheme,'alpha',[]);
 
@@ -71,6 +75,10 @@ threshold_scheme = 1;
 W_nd = cellfun(@(w,m)w./m,WS.reshape_w,Mscale,'un',0); 
 
 %% view results
+
+fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);
+fprintf('\ntf rads=');fprintf('%u ',WS.tf{1}{1}.rads);
+fprintf('\nsize G=');fprintf('%u ',size(WS.Gs{1}{1}));fprintf('\n')
 
 %%% display model
 Str_mod = WS.disp_mod;
@@ -80,6 +88,15 @@ for j=1:WS.numeq
     cellfun(@(s)fprintf('%s \n',s),Str_mod{j})
 end
 cellfun(@(G)fprintf('cond(g)=%1.2e \n',cond(G)),WS.G)
+
+w_true = WS.reshape_w; w_true = cellfun(@(w)w*0,w_true,'un',0);
+for i=1:WS.numeq
+    w_true{i}(ismember(cell2mat(WS.lib(i).tags(:)),true_nz_weights{i}(:,1:end-1),'rows')) = ...
+        true_nz_weights{i}(:,end);
+end
+cellfun(@(w,v)fprintf('coeff err=%1.2e\n',norm(w-v)/norm(v)),w_true,WS.reshape_w)
+cellfun(@(w,v)fprintf('supp rec=%i\n',isequal(find(w),find(v))),w_true,WS.reshape_w)
+
 
 %%% display data
 figure(1);clf;

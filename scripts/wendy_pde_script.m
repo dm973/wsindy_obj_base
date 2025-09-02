@@ -1,3 +1,6 @@
+%% add wsindy_obj_base to path
+addpath(genpath('../'))
+
 %% load data
 
 %%% choose PDE
@@ -23,11 +26,11 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-80]);
+Uobj.coarsen(3);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.25;
+noise_ratio = 0.4;
 rng('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
@@ -40,7 +43,7 @@ x_diffs = x_diffs(:,nstates+1:end-2);
 
 %% get test function
 
-toggle_strong_form=0;
+toggle_strong_form = 0;
 if toggle_strong_form==1
     phifun = 'delta';
     tf_meth = 'direct';
@@ -89,7 +92,7 @@ toggle_plot = 1;
 if toggle_plot
 figure(1);
 m = 64;
-% colormap([copper(m);cool(m)])
+
 colormap(bone(m))
 for j=1:Uobj.nstates
     if Uobj.ndims==2

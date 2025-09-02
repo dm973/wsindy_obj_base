@@ -1,40 +1,17 @@
+%% add wsindy_obj_base to path
+addpath(genpath('../'))
+
 %% load data
 
 %%% choose PDE
-dr = '~/Dropbox/Boulder/research/data/WSINDy_PDE/datasets/';
-pde_names = {'burgers.mat',...          %1 bias=0
-    'burgers_vis.mat',...               %2 bias=0
-    'visburgs_etdrk4.mat',...           %3 bias=0 -- 92
-    'burgers_smallamp.mat',...          %4 bias=0 -- 52
-    'burgers_vis0025_cubic2.mat',...    %5 bias=0 -- 128
-    'KdV.mat',...                       %6 bias=0, variable -- 64
-    'KS.mat',...                        %7 bias=0, -- 100
-    'hyperKS.mat',...                   %8 bias=0, -- 120
-    'lin_schrod.mat',...                %9 bias=0,H=0, -- 52
-    'NLS.mat',...                       %10 %%% bias correct! cov helps a little, -- 48
-    'NLS_long.mat',...                  %11 -- 120
-    'transportDiff.mat',...             %12 bias=0,H=0, -- 48
-    'advecdiff_exact.mat',...           %13 %%% bias=0,H=0, -- 36
-    'AC_temp.mat',...                   %14 % - very bad, transitions to another equation?, -- 64
-    'fkpp_tw.mat',...                   %15 % - very bad, transitions to another equation?, -- 46
-    'sod.mat',...                       %16 %% -- 64
-    'bw.mat',...                        %17 
-    'bwEpstar.mat',...                  %18 
-    'porous2.mat',...                   %19 bias=0
-    'Sine_Gordon.mat',...               %20 %%% bias correct! cov + bias
-    'wave2Du3.mat',...                  %21 
-    'rxn_diff.mat',...                  %22 
-    'full_or_old/rxn_diff_old.mat',...  %23 
-    'Nav_Stokes.mat',...                %24 bias=0
-    '2D_Blast_prat_90_r.mat',...        %25 
-    'bwE.mat',...                       %26 %%2D
-    'wave3D.mat',...                    %27 bias=0,H=0
-    'wave3D_N128.mat',...               %28 bias=0,H=0
-    '2D_Blast_prat_90_r_equi.mat',...   %29 
+dr = 'pde_data/';
+pde_names = {'burgers.mat',...          
+             'KS.mat',...                
+             'NLS.mat',...               
+             'porous2.mat',... 
+             'sod_exact.mat',...
     };
-
-pde_num = 7; % set to 0 to run on pre-loaded dataset
-
+pde_num = 3; % set to 0 to run on pre-loaded dataset
 if pde_num~=0
     pde_name = pde_names{pde_num};
     load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
@@ -47,10 +24,10 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen([-128*[1 1] -48]);
+Uobj.coarsen(3);
 
 %%% add noise
-noise_ratio = 0.2;
+noise_ratio = 0.4;
 rng('shuffle') % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
@@ -97,16 +74,16 @@ else
     phifun = 'pp';
     tf_meth = 'FFT';
     tau = 10^-10;
-    tauhat = 2;
+    tauhat = 1;
     tf_param = {[tau tauhat max(x_diffs(:))],[tau tauhat max(lhs(:,end))]};
 
     % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
     % tf_meth = 'timefrac';
     % tf_param = [0.3 0.2];
 
-    phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
-    tf_meth = 'FFT';
-    tf_param = 3;
+    % phifun = @(v)exp(-9*[1./(1-v.^2)-1]);
+    % tf_meth = 'FFT';
+    % tf_param = 3;
 
     % phifun = @(v)exp(-9*[1./(1-v.^2)aa-1]);
     % tf_meth = 'direct';
@@ -116,22 +93,21 @@ else
     % tf_meth = 'timefrac';
     % tf_param = 0.1;
 
-    subinds = -4;
+    subinds = -3;
 end
 tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
     'meth',tf_meth,'param',tf_param,'stateind',find(lhs(i,1:nstates),1)),(1:size(lhs,1))','uni',0);
 
 %% build WSINDy linear system
 tic;
-% WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs,'statcorrect',[0 1]);
 WS = wendy_model(Uobj,lib,tf,[1 1],'lhsterms',lhs);
 
 %% WENDy solve
 
 toggle_wendy = 1;
 
-MSTLS_args = {'lambda',10.^linspace(-4,0,100)};
-WENDy_args = {'maxits_wendy',2,'diag_reg',10^-inf,'verbose',1};
+MSTLS_args = {'lambda',10.^linspace(-4,0,25),'maxits',3};
+WENDy_args = {'maxits_wendy',2,'diag_reg',10^-4,'verbose',1};
 MSTLS_WENDy_args = {'cov_thresh',0.5};
 
 if toggle_wendy==0
@@ -156,6 +132,7 @@ end
 
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
+fprintf('\nsize G=');fprintf('%u ',size(WS.G{1}));fprintf('\n')
 
 if exist('true_nz_weights','var')
     w_true = arrayfun(@(L)zeros(length(L.terms),1),WS.lib(:),'Un',0);
@@ -219,3 +196,38 @@ for j=1:size(loss_wsindy,1)-1
     hold on
 end
 hold off
+
+%% scratch
+
+%%% choose PDE
+% dr = '~/Dropbox/Boulder/research/data/WSINDy_PDE/datasets/';
+% pde_names = {'burgers.mat',...          %1 bias=0
+%     'burgers_vis.mat',...               %2 bias=0
+%     'visburgs_etdrk4.mat',...           %3 bias=0 -- 92
+%     'burgers_smallamp.mat',...          %4 bias=0 -- 52
+%     'burgers_vis0025_cubic2.mat',...    %5 bias=0 -- 128
+%     'KdV.mat',...                       %6 bias=0, variable -- 64
+%     'KS.mat',...                        %7 bias=0, -- 100
+%     'hyperKS.mat',...                   %8 bias=0, -- 120
+%     'lin_schrod.mat',...                %9 bias=0,H=0, -- 52
+%     'NLS.mat',...                       %10 %%% bias correct! cov helps a little, -- 48
+%     'NLS_long.mat',...                  %11 -- 120
+%     'transportDiff.mat',...             %12 bias=0,H=0, -- 48
+%     'advecdiff_exact.mat',...           %13 %%% bias=0,H=0, -- 36
+%     'AC_temp.mat',...                   %14 % - very bad, transitions to another equation?, -- 64
+%     'fkpp_tw.mat',...                   %15 % - very bad, transitions to another equation?, -- 46
+%     'sod.mat',...                       %16 %% -- 64
+%     'bw.mat',...                        %17 
+%     'bwEpstar.mat',...                  %18 
+%     'porous2.mat',...                   %19 bias=0
+%     'Sine_Gordon.mat',...               %20 %%% bias correct! cov + bias
+%     'wave2Du3.mat',...                  %21 
+%     'rxn_diff.mat',...                  %22 
+%     'full_or_old/rxn_diff_old.mat',...  %23 
+%     'Nav_Stokes.mat',...                %24 bias=0
+%     '2D_Blast_prat_90_r.mat',...        %25 
+%     'bwE.mat',...                       %26 %%2D
+%     'wave3D.mat',...                    %27 bias=0,H=0
+%     'wave3D_N128.mat',...               %28 bias=0,H=0
+%     '2D_Blast_prat_90_r_equi.mat',...   %29 
+%     };

@@ -1,4 +1,7 @@
-% clear all; close all; clc
+%% add wsindy_obj_base to path
+addpath(genpath('../'))
+
+clear all; close all; clc
 rng('shuffle'); 
 rng_seed = rng().Seed; rng(rng_seed);
 

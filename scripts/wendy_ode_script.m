@@ -1,3 +1,6 @@
+%% add wsindy_obj_base to path
+addpath(genpath('../'))
+
 %% generate data (Lorenz96)
 
 nstates = 5;       % Number of variables
@@ -16,7 +19,7 @@ ode_function = @(t, x) lorenz96ode(t, x, nstates, F0, self_damping, nn_coupling,
 true_prod_tags = cellfun(@(w)w(:,1:end-1),true_nz_weights,'uni',0);
 
 M_obs = 256; % number of observed timepoints
-noise_ratio = 0.50; % noise ratio
+noise_ratio = 0.25; % noise ratio
 
 %%% get wsindy_data object
 Uobj = wsindy_data(x,t);
@@ -52,6 +55,7 @@ tol_dd = 10^-12;
 lib = cellfun(@(tm)library('tags',tm),true_prod_tags);
 
 %%% get test function
+eta = 9;
 if isequal(tf_type,'Cinf')
     phifun = @(x) exp(-eta*(1-x.^2).^(-1)); 
 elseif isequal(tf_type,'pp')
@@ -95,8 +99,8 @@ fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
 tic;
 %%% instantiate WENDy model
-wendy_mdel_class = [toggle_cov_1st_order+toggle_cov_2nd_order toggle_include_bias_correction];
-WS = wendy_model(Uobj,lib,tf,wendy_mdel_class);
+wendy_model_class = [toggle_cov_1st_order+toggle_cov_2nd_order toggle_include_bias_correction];
+WS = wendy_model(Uobj,lib,tf,wendy_model_class);
 
 %%% solve for coefficients
 [WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,wendy_params{:});
@@ -125,7 +129,7 @@ disp(['rel L2 errs (OLS, WENDy)=',num2str(errs([1 end]))])
 disp(['runtime(s)=',num2str(total_time_wendy)])
 disp(['num its=',num2str(size(w_its,2))])
 
-%% simulate learned and true reduced systems
+%% simulate learned and true reduced systems, display results
 if toggle_compare==1
     w_plot = w_its(:,end);
     rhs_learned = WS.get_rhs('w',w_plot);
@@ -156,6 +160,7 @@ if toggle_compare==1
 end
 
 %% Functions
+
 function dXdt = lorenz96ode(t, X, n, F0, sd, nn, pnn)
     % This function defines the Lorenz-96 ODE system.
     dXdt = zeros(n, 1); % Initialize the derivative vector

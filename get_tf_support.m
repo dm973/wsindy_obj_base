@@ -28,4 +28,8 @@ function m = get_tf_support(phi,N,tauhat,k_x)
     [~,m]=min(errs);
     m=m+1;
 
+    if isempty(m)
+        m=0;
+    end
+
 end

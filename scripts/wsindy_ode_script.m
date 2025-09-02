@@ -1,11 +1,14 @@
+%% add wsindy_obj_base to path
+addpath(genpath('../'))
+
 %% load data
-nstates = 4;
+nstates = 5;
 tol_ode = 10^-10;
 t = linspace(0,5,100);
 p = [-1,1,3,2,nstates];
 rhs_true = @(x) rhs_p(t,x,p);
 
-ntraj = 50;
+ntraj = 25;
 xcell = cell(ntraj,1);
 tcell = cell(ntraj,1);
 for i=1:ntraj
@@ -27,7 +30,7 @@ ntraj = length(Uobj);
 nstates = Uobj.nstates;
 M = Uobj.dims;
 
-noise_ratio = 0.1;
+noise_ratio = 0.05;
 rng('shuffle')
 rng_seed = rng().Seed; rng(rng_seed);
 arrayfun(@(U)U.addnoise(noise_ratio,'seed',rng_seed),Uobj);

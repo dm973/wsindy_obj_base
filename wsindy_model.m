@@ -521,7 +521,7 @@ classdef wsindy_model < handle
             end
         end
 
-        function [G,b,RT] = apply_cov(obj,G,b,diag_reg)
+        function [G,b,RT] = apply_cov(obj,G,b,diag_reg,sparse_inds)
             if isempty(obj.cov)
                 obj = obj.get_cov;
             end
@@ -770,12 +770,13 @@ classdef wsindy_model < handle
         end
 
         function [f,J,s,Fs] = get_functional_forms_vec(obj,varargin)
-
-            p = inputParser;
-            addParameter(p,'w',[]);
-            parse(p,varargin{:})
+            IP = inputParser;
+            addParameter(IP, 'ep', 1e-6);
+            addParameter(IP,'w',[]);
+            parse(IP,varargin{:})
             
-            w = p.Results.w;
+            ep = IP.Results.ep; 
+            w = IP.Results.w;
             if ~isempty(w)
                 w = obj.reshape_w('w',w);
             else
@@ -814,23 +815,33 @@ classdef wsindy_model < handle
                 end
                 Fs{i} = fs;
             end 
-            f = @(q) obj.eval_ff_vec(Fs,[1,0],q);
-            s = @(q) obj.eval_ff_vec(Fs,[0,0],q);
-            J = @(q) obj.eval_Jf_vec(Fs,[1,0],q);        
+            f = @(q) obj.eval_ff_vec(Fs,[1,0],q,'ep',ep);
+            s = @(q) obj.eval_ff_vec(Fs,[0,0],q,'ep',ep);
+            J = @(q) obj.eval_Jf_vec(Fs,[1,0],q,'ep',ep);        
         end
 
-        function X = eval_ff_vec(obj,Fs,difftag,q)
+        function X = eval_ff_vec(obj,Fs,difftag,q,varargin)
+            IP = inputParser; 
+            addParameter(IP, 'ep', 1e-6);
+            parse(IP, varargin{:});
+            ep = IP.Results.ep; 
+
             X = q*0;
             for i=1:obj.numeq
                 for j=1:length(Fs{i})
                     if isequal(Fs{i}{j}{1},difftag)
-                        X(:,i) = obj.eval_ff(Fs{i}{j}{2},Fs{i}{j}{3},q);
+                        X(:,i) = obj.eval_ff(Fs{i}{j}{2},Fs{i}{j}{3},q,'ep',ep);
                     end
                 end
             end
         end
 
-        function JX = eval_Jf_vec(obj,Fs,difftag,q)
+        function JX = eval_Jf_vec(obj,Fs,difftag,q,varargin)
+            IP = inputParser; 
+            addParameter(IP, 'ep', 1e-6);
+            parse(IP, varargin{:});
+            ep = IP.Results.ep; 
+
             if isvector(q)
                 q = q(:)';
             end
@@ -840,7 +851,7 @@ classdef wsindy_model < handle
                     num_terms = size(Fs{i}{j}{2},1);
                     if isequal(Fs{i}{j}{1},difftag)
                         for k=1:obj.nstates
-                            JX(:,i,k) = obj.eval_ff(reshape(Fs{i}{j}{4}(:,k,:),num_terms,obj.nstates),Fs{i}{j}{5}(:,k),q);
+                            JX(:,i,k) = obj.eval_ff(reshape(Fs{i}{j}{4}(:,k,:),num_terms,obj.nstates),Fs{i}{j}{5}(:,k),q,'ep',ep);
                         end
                     end
                 end
@@ -984,6 +995,14 @@ classdef wsindy_model < handle
             end
         end
 
+        function plot_correlation(obj,k,j)
+            A = obj.G{k};
+            A = A./vecnorm(A);
+            A = abs(A'*A);
+            figure(j)
+            imagesc(A);
+            colorbar
+        end
     end
 
 end

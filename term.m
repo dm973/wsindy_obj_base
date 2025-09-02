@@ -68,7 +68,15 @@ classdef term < absterm
             if isequal(class(dat),'cell')
                 Y = obj.fHandle(dat{:});
             elseif isequal(class(dat),'wsindy_data')
-                Y = obj.fHandle(dat.Uobs{:});            
+                s = dat.scales;
+                if and(obj.get_scale(s) == 1,~isempty(s))
+                    s = num2cell(s);
+                    U = dat.Uobs;
+                    U = cellfun(@(u,s)u*s,U,s(1:dat.nstates),'un',0);
+                    Y = obj.fHandle(U{:});
+                else
+                    Y = obj.fHandle(dat.Uobs{:});            
+                end
             elseif isequal(class(dat),'double')
                 Xcell = obj.dat2cell(dat);
                 Y = obj.fHandle(Xcell{:});

@@ -463,10 +463,7 @@ classdef wsindy_data < handle
                     betad = max(cell2mat(arrayfun(@(L) max(cell2mat(L.tags(:)),[],1), lib(:), 'un',0)),[],1);
                     betad = betad(1:obj.nstates);
                     ad = max(cell2mat(arrayfun(@(L) max(cell2mat(cellfun(@(tt)tt.linOp.difftags,L.terms(:),'un',0)),[],1), lib(:), 'un',0)),[],1);
-                    % scales_u = arrayfun(@(b,i) norm(obj.Uobs{i}(:)/norm(obj.Uobs{i}(:),1)^(1/b),b)^(b/(b-1)),betad,1:obj.nstates);1-norm
-                    scales_u = arrayfun(@(b,i) min(max(norm(obj.Uobs{i}(:)/norm(obj.Uobs{i}(:),2)^(1/b),2*b)^(b/max(b-1,1)),eps),1/eps), betad,1:obj.nstates);
-
-                    % scales_x = arrayfun(@(p,m,d,a) (nchoosek(p,floor(a/2))*factorial(a))^(1/a)/(m*d),pd,md,dx,ad);
+                    scales_u = arrayfun(@(b,i) min(max(norm(obj.Uobs{i}(:)/norm(obj.Uobs{i}(:),2)^(1/b),2*b)^(b/max(b-1,1)),eps),1/eps^2), betad,1:obj.nstates);
                     scales_x = arrayfun(@(p,m,d,a) (prod(p-(0:floor(a/2)-1))/prod(1:ceil(a/2))*prod(1:a))^(1/a) / (m*d),pd,md,dx,ad);
 
                     scales = [scales_u,1./scales_x];
