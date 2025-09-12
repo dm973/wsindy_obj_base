@@ -594,6 +594,7 @@ classdef WS_opt < handle
             addRequired(p,'A');
             addRequired(p,'b');
             addParameter(p,'S',true(size(A,2),1));
+            addParameter(p,'C',speye(size(A,2)));
             addParameter(p,'x0',[]);
             addParameter(p,'Aineq',[]);
             addParameter(p,'bineq',[]);
@@ -608,6 +609,9 @@ classdef WS_opt < handle
             parse(p,A,b,varargin{:})
 
             x0 = p.Results.x0;
+
+            % x0
+
             Aineq = p.Results.Aineq;
             bineq = p.Results.bineq;
             if isempty(Aineq)
@@ -626,13 +630,17 @@ classdef WS_opt < handle
             opttol = p.Results.opttol;
             maxits = p.Results.maxits;
             S = p.Results.S;
+            C = p.Results.C;
             verbosity = p.Results.verbose;
 
             if any(S)
                 if size(A,2)~=length(find(S))
                     A = A(:,S);
+                    C = C(S,:);
                 end
-
+                A = A*C;
+                Cinv = pinv(full(C));
+        
                 if isempty(x0)
                     if diff(size(A))>=0
                         % 
@@ -644,24 +652,30 @@ classdef WS_opt < handle
                         % x0(reg_inds) = A(:,reg_inds) \ b;
                         % x0 = obj.inject_sparse(x0,S);
 
-                        x0 = obj.inject_sparse(lsqminnorm(A,b),S);
+                        x0 = obj.inject_sparse(C*lsqminnorm(A,b),S);
                     else
-                        x0 = obj.inject_sparse(A\b,S);
+                        x0 = obj.inject_sparse(C*(A\b),S);
                     end
                 end
     
                 if any([~isempty(Aineq) ~isempty(bineq) ~isempty(Aeq) ~isempty(beq) ~isempty(LB) ~isempty(UB)])
+                    colnorms = vecnorm(A);
+                    A = A./colnorms;
                     if ~isempty(Aineq)
-                        Aineq = Aineq(:,S);
+                        Aineq = Aineq(:,S)*C;
+                        Aineq = Aineq./colnorms;
                     end
                     if ~isempty(Aeq)
-                        Aeq = Aeq(:,S);
+                        Aeq = Aeq(:,S)*C;
+                        Aeq = Aeq./colnorms;
                     end
                     if ~isempty(LB)
-                        LB = LB(S);
+                        LB = LB(S)*C;
+                        LB = LB.*colnorms(:);
                     end
                     if ~isempty(UB)
-                        UB = UB(S);
+                        UB = UB(S)*C;
+                        UB = UB.*colnorms(:);
                     end
                     % if isequal(verbosity,'None')
                     %     N1 = null(Aeq);
@@ -674,11 +688,17 @@ classdef WS_opt < handle
                     %     end
                     % end
                     options = optimoptions('quadprog','Display',verbosity,'ConstraintTolerance',consttol,'OptimalityTolerance',opttol,'MaxIterations',maxits);
+                    if ~isempty(x0)
+                        %%% project least squares onto feasible set
+                        x0 = Cinv*x0(S).*colnorms(:);
+                        x0 = quadprog(eye(length(x0)),-x0,Aineq,bineq,Aeq,beq,LB,UB,[],options);
+                    end
                     x = quadprog((A'*A),-(A'*b),Aineq,bineq,Aeq,beq,LB,UB,x0,options);
+                    x = x./colnorms(:);
                     if isempty(x)
                         x = zeros(size(A,2),1);
                     end
-                    x = obj.inject_sparse(x,S);
+                    x = obj.inject_sparse(C*x,S);
                 else
                     x = x0;
                 end

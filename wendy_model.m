@@ -6,6 +6,7 @@ classdef wendy_model < wsindy_model
         bias
         biasG
         statcorrect
+        CMat
     end
 
     methods
@@ -15,7 +16,7 @@ classdef wendy_model < wsindy_model
             obj.H = [];
             obj.biasfac = {};
             obj.bias = [];
-            obj.biasG= [];
+            obj.biasG = [];
             obj.statcorrect = statcorrect;
         end
     end

@@ -97,7 +97,7 @@ classdef wsindy_data < handle
             obj = obj.get_dims;
         end
 
-        function obj = trimend(obj,s,d)
+        function obj = trimend(obj,s,d) % s trimming index, d dimension
             if length(s)==1
                 if ~exist('d','var')
                     d=1;
