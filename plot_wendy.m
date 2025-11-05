@@ -27,7 +27,7 @@ subplot(3,2,2)
 dat = vecnorm(diff(w_its,[],2),2,1)./vecnorm(w_its(:,1:end-1),2,1);
 semilogy(dat,'o-')
 title('||w^n-w^{n+1}||/||w^n||')
-set(gca,'Ytick',10.^(floor(min(log10(dat))):1:ceil(max(log10(dat)))))
+% set(gca,'Ytick',10.^(floor(min(log10(dat))):1:ceil(max(log10(dat)))))
 
 %%% confidence intervals
 subplot(3,2,3)

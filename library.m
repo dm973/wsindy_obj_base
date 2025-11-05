@@ -162,9 +162,10 @@ classdef library < handle
 
         function Theta = evalterms(obj,dat,S)
             if ~exist('S','var')
-                S = true(length(obj.terms),1);
+                S = true(1,length(obj.terms));
             end
-            Theta = cell2mat(cellfun(@(tm) tm.evalterm(dat),obj.terms(S),'uni',0));
+            Theta = cellfun(@(tm) tm.evalterm(dat),obj.terms(S),'uni',0);
+            Theta = cat(dat.ndims+1,Theta{:});
         end
 
         function obj = remove_terms(obj,ndims,varargin)

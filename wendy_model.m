@@ -6,7 +6,7 @@ classdef wendy_model < wsindy_model
         bias
         biasG
         statcorrect
-        CMat
+        Amat
     end
 
     methods

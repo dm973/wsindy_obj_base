@@ -161,7 +161,7 @@ classdef WS_opt < handle
             end
 
             if and(toggle_discrep==1,~isempty(WS.weights))                
-                b = cellfun(@(g,b,w) b-g*w,G,b,WS.reshape_w,'uni',0);
+                b = cellfun(@(g,b,w,M) b-g*(w./M),G,b,WS.reshape_w,M_diag,'uni',0);
                 G = cellfun(@(g,w) g(:,~w),G,WS.reshape_w,'uni',0);
                 % fix!!!
                 % if ~isempty(Aeq)
@@ -595,6 +595,7 @@ classdef WS_opt < handle
             addRequired(p,'b');
             addParameter(p,'S',true(size(A,2),1));
             addParameter(p,'C',speye(size(A,2)));
+            addParameter(p,'Cinv',[]);
             addParameter(p,'x0',[]);
             addParameter(p,'Aineq',[]);
             addParameter(p,'bineq',[]);
@@ -631,6 +632,7 @@ classdef WS_opt < handle
             maxits = p.Results.maxits;
             S = p.Results.S;
             C = p.Results.C;
+            Cinv = p.Results.Cinv;
             verbosity = p.Results.verbose;
 
             if any(S)
@@ -639,8 +641,10 @@ classdef WS_opt < handle
                     C = C(S,:);
                 end
                 A = A*C;
-                Cinv = pinv(full(C));
-        
+                if isempty(Cinv)
+                    Cinv = pinv(full(C));
+                end
+
                 if isempty(x0)
                     if diff(size(A))>=0
                         % 
@@ -726,6 +730,7 @@ classdef WS_opt < handle
             addParameter(p,'w',default_w);
             addParameter(p,'regmeth',default_regmeth);
             addParameter(p,'verbose',0);
+            addParameter(p,'sparse_inds',[]);
             addParameter(p,'linregargs',{});
             addParameter(p,'CovW_type','OLS');
             parse(p,WS,varargin{:})
@@ -739,6 +744,7 @@ classdef WS_opt < handle
             linregargs = p.Results.linregargs;
             tr = p.Results.trim_rows;
             CovW_type = p.Results.CovW_type;
+            sparse_inds = p.Results.sparse_inds;
 
             if verbosity
                 tic,
@@ -760,7 +766,10 @@ classdef WS_opt < handle
             end
             
             check = 1;
-            sparse_inds = WS.weights~=0;
+            if isempty(sparse_inds)
+                sparse_inds = WS.weights~=0;
+            end
+
             w_its = WS.weights;
             res_0 = [];
             res = [];
