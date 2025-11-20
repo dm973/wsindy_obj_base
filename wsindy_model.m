@@ -407,9 +407,9 @@ classdef wsindy_model < handle
                 end
             end
             S = obj.get_supp;
-            if isempty(obj.features)
-                obj.get_features;
-            end
+            % if isempty(obj.features)
+            %     obj.get_features;
+            % end
             for j=1:obj.ntraj
                 for i=1:obj.numeq
                     if isempty(obj.L0{j}{i})
@@ -441,8 +441,13 @@ classdef wsindy_model < handle
             end
         end
 
-        function obj = get_L(obj)
-            w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
+        function obj = get_L(obj,varargin)
+            IP = inputParser; 
+            addParameter(IP, 'w', obj.weights);
+            parse(IP, varargin{:});
+            w = IP.Results.w;
+
+            w = reshape_cell(w,arrayfun(@(L)length(L.terms),obj.lib)); 
             S = obj.get_supp;
             if obj.toggleH
                 S = repmat(S,1,obj.nstates);

@@ -42,7 +42,17 @@ classdef WS_opt < handle
                     S = cellfun(@(w)w~=0,WS.reshape_w,'uni',0);
                 end
             end
-            w = cell2mat(cellfun(@(g,b,s)obj.linreg(g(:,s),b,linregargs{:},'S',s), WS.G, WS.b, S, 'uni',0));
+            G = WS.G;
+            if isprop(WS,'biasG')
+                if isequal(WS.catm,'blkdiag')
+                    if WS.statcorrect(2)==1
+                        WS.add_weights(ones(sum(cellfun(@(G)size(G,2),G)),1));
+                        WS.get_biasG;
+                        G{1} = G{1}-WS.biasG;
+                    end
+                end
+            end
+            w = cell2mat(cellfun(@(g,b,s)obj.linreg(g(:,s),b,linregargs{:},'S',s), G, WS.b, S, 'uni',0));
             WS.add_weights(w,'toggle_cov',0);
         end
 
@@ -746,8 +756,8 @@ classdef WS_opt < handle
             CovW_type = p.Results.CovW_type;
             sparse_inds = p.Results.sparse_inds;
 
-            if verbosity
-                tic,
+            if ~isequal(verbosity,0)
+                tstart=tic;
             end
 
             if ~isempty(w)
@@ -778,9 +788,10 @@ classdef WS_opt < handle
             G_0 = WS.G{1};
             b_0 = WS.b{1};
 
-
             while and(check,its<maxits)
-                % disp(['iter=',num2str(its)])
+                if isequal(verbosity,'iter')
+                    t_before=toc(tstart);
+                end
                 if isequal(regmeth,'ols')
                     [G,b,RT] = WS.apply_cov(G_0(:,sparse_inds),b_0,obj.diag_reg,sparse_inds);
                     w = obj.linreg(G,b,linregargs{:},'S',sparse_inds);
@@ -792,12 +803,13 @@ classdef WS_opt < handle
                     G = G(:,sparse_inds);
                     RT = chol(WS.cov)';
                 end
-
+                if isequal(verbosity,'iter')
+                    t_iter=toc(tstart)-t_before;
+                    fprintf('\niter %i: elapsed time=%3.5f',its,t_iter)
+                end
                 w_its = [w_its WS.weights];
                 check = norm(diff(w_its(:,end-1:end),[],2))/norm(w_its(:,end-1))>ittol;
-
                 res_0 = [res_0 G_0(:,sparse_inds)*w_its(sparse_inds,end)-b_0];
-
                 res = [res G*w_its(sparse_inds,end)-b];
                 its = size(w_its,2)-1;
             end
@@ -820,8 +832,8 @@ classdef WS_opt < handle
                 CovW = Ginv*Ginv';
             end
             
-            if verbosity
-                disp(['wendy iter time=',num2str(toc),'; sparsity=',num2str(length(find(WS.weights))),'; its=',num2str(its)])
+            if ~isequal(verbosity,0)
+                fprintf('\nwendy iter time=%3.5f; sparsity=%i; its=%i',toc,length(find(WS.weights)),its)
             end
         end
 

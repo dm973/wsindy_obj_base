@@ -11,6 +11,9 @@ classdef wendy_model < wsindy_model
 
     methods
         function obj = wendy_model(dat,lib,tf,statcorrect,varargin)
+            if ~ismember('catm', varargin(1:2:end))
+                varargin = [varargin, {'catm', 'blkdiag'}];
+            end
             obj = obj@wsindy_model(dat,lib,tf,varargin{:});
             obj.Hfac = {};
             obj.H = [];

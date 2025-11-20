@@ -3,11 +3,9 @@ err_windy=errs(end);
 
 %%% compute conf intervals
 w_hat = w_plot(w_plot~=0);
-xflip = [1:length(w_hat) length(w_hat):-1:1];
-c = 0.05; % <(100)c % chance of not containing true val
-stdW = max(sqrt(diag(CovW)),eps);
-conf_int = arrayfun(@(x)norminv(1 - c/2,0,x),stdW);
-confbounds = [w_hat-conf_int;flipud(w_hat+conf_int)];
+w_true_hat = w_true(w_plot~=0);
+c0 = 0.05; c_maxmin = false;
+[conf_int,c,confbounds,xflip] = get_conf_ints(w_hat,w_true_hat,CovW,c0,c_maxmin);
 
 %%% print results
 disp(['err WENDy:',num2str(err_windy)])
@@ -48,7 +46,7 @@ for j=1:length(w_hat)
     line([j-gg j+gg],[w_hat(j) w_hat(j)],'color','m','linewidth',3)
 end
 try
-    h1=plot(1:length(w_hat),w_true(w_plot~=0),'bx','linewidth',3,'markersize',6);
+    h1=plot(1:length(w_hat),w_true_hat,'bx','linewidth',3,'markersize',6);
     legend([h0;h1],{[num2str((1-c)*100),'% CI'],'true val.'},'location','best')
 catch
     legend(h0,{[num2str((1-c)*100),'% CI']},'location','best')
@@ -73,4 +71,30 @@ if ~isempty(res_0)
     subplot(3,2,6)
     plot(res_0(:,1))
     title('b-G*w')
+end
+
+function [conf_int,c,confbounds,xflip] = get_conf_ints(w_hat,w_true_hat,CovW,c,c_maxmin)
+    xflip = [1:length(w_hat) length(w_hat):-1:1];
+    % <(100)c % chance of not containing true val
+    check = true;
+    stdW = max(sqrt(diag(CovW)),eps);
+
+    if c_maxmin
+
+        while check
+            c = c/2;
+            conf_int = arrayfun(@(x)norminv(1 - c/2,0,x),stdW);
+            confbounds = [w_hat-conf_int;flipud(w_hat+conf_int)];        
+            if any(~and(w_true_hat>=w_hat-conf_int,w_true_hat<=w_hat+conf_int))
+                check = true;
+            else
+                check = false;
+            end
+        end
+
+    else
+        conf_int = arrayfun(@(x)norminv(1 - c/2,0,x),stdW);
+        confbounds = [w_hat-conf_int;flipud(w_hat+conf_int)];
+    end
+
 end
