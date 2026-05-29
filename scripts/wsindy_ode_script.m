@@ -1,88 +1,88 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% This script applies WSINDy to ODE data. Each of the ODEs in ode_names 
+% below has associated defaults for 
+% - tspan: time domain (1d array)
+% - ode_params: ODE parameters (cell array)
+% - x0: initial conditions
+% Check the file gen_ode_data for info on the parameters 
+% dependence and dimensionality of the respective ODE
+
 %% add wsindy_obj_base to path
-addpath(genpath('../'))
-close all; clear all;
+
+fullPathToScript = mfilename('fullpath');
+currentDir = fileparts(fullPathToScript);
+parentDir = fileparts(currentDir);
+addpath(genpath(parentDir))
+
+% close all; clear all;
 
 %% load data
-nstates = 5;
-tol_ode = 10^-10;
-t = linspace(0,5,100);
-p = [-1,1,3,2,nstates];
 
-true_nz_weights = get_true_weights(p);
-rhs_true = @(x) rhs_p(t,x,p);
+ode_num = 'Lorenz';                   % select ODE from list below
+tol_ode = 1e-12;                      % set tolerance (abs and rel) of ode45
 
-ntraj = 10;
-xcell = cell(ntraj,1);
-tcell = cell(ntraj,1);
-for i=1:ntraj
-    x0 = randn(nstates,1)*1;
-    % x0 = (rand(nstates,1)-0.5)*6;
-    options_ode_sim = odeset('RelTol',tol_ode,'AbsTol',tol_ode*ones(1,length(x0)));
-    [t,x]=ode45(@(t,x)rhs_true(x),t,x0,options_ode_sim);
-    xcell{i} = x;
-    tcell{i} = t;
-end
+tspan = [0:0.0005:10]; ode_params = {}; x0 = []; % ODE system parameters
+ode_names = {'Linear','Logistic_Growth','Van_der_Pol','Duffing',... %1-4
+             'Lotka_Volterra','Lorenz','Rossler','rational',...     %5-8
+             'Oregonator','Hindmarsh-Rose','Pendulum','custom'};    %9-12
+[true_nz_weights,x,t,x0,ode_name,ode_params,rhs] = gen_ode_data(ode_num,ode_params,tspan,x0,tol_ode);
 
 %% get wsindy_data object
-Uobj = cellfun(@(x,t)wsindy_data(x,t),xcell,tcell);
 
-maxtp = 50;
-arrayfun(@(U)U.coarsen(ceil(U.dims/maxtp)),Uobj);
+Uobj = wsindy_data(x,t);
 
-ntraj = length(Uobj);
-nstates = Uobj.nstates;
-M = Uobj.dims;
+%%% Subsample data
+max_timepoints = 1000;
+Uobj.coarsen(-max_timepoints);
 
-noise_ratio = 0.0;
+%%% add noise data
+noise_ratio = 0.2;
 rng('shuffle')
 rng_seed = rng().Seed; rng(rng_seed);
-arrayfun(@(U)U.addnoise(noise_ratio,'seed',rng_seed),Uobj);
+Uobj.addnoise(noise_ratio,'seed',rng_seed);
 
-scales = mean(cell2mat(arrayfun(@(U)cellfun(@(u)norm(u,inf)/2,U.Uobs),Uobj(:),'un',0)));
-scales = [scales,1];
-arrayfun(@(U)U.set_scales(scales),Uobj);
-
+%%% plot data
 figure(1)
-for i=1:ntraj
-    Uobj(i).plotDyn;
-    hold on
-end
+Uobj.plotDyn;
 
-figure(2)
-datall = cell2mat(arrayfun(@(U)[U.Uobs{:}],Uobj(:),'un',0));
-for i=1:nstates
-    subplot(ceil(nstates/2),2,i)
-    histogram(datall(:,i),ceil(size(datall,1)^(2/5)))
-end
+%% select left-hand side
 
-%% get lib tags
+lhs_diff_ord = 1;
+lhs_tags = get_tags(1,[],Uobj.nstates);
+lhs = arrayfun(@(i)term('ftag',lhs_tags(i,:),'linOp',lhs_diff_ord),(1:Uobj.nstates)','uni',0);
 
+%% get library
+
+%%% define polynomial and trig orders
 polys = 0:4;
-tags = get_tags(polys,[],nstates);
-lib = library('tags',tags);
+trigs = [];
+
+lib_tags = get_tags(polys,trigs,Uobj.nstates);
+lib = library('tags',lib_tags);
 
 %% get test function
 
-tf = arrayfun(@(U)testfcn(U,'phifuns',optTFcos(1,2),'meth','FFT','param',1,'subinds',-4),Uobj,'un',0);
+%%% select test function family, radius selection method, spacing between tf
+tf_params = {'phifuns',optTFcos(1,2),'meth','FFT','param',1,'subinds',-4};
+
+tf = testfcn(Uobj,tf_params{:});
 
 %% build WSINDy linear system
-WS = wsindy_model(Uobj,lib,tf);
 
-%%% set up rescaling transform
-Mscale = arrayfun(@(L)L.get_scales(scales),WS.lib(:),'un',0);
-lhs_scales = cellfun(@(t)t.get_scale(scales),WS.lhsterms(:),'un',0);
-Mscale = cellfun(@(M,L)M/L,Mscale,lhs_scales,'un',0);
-Mscale_W = cell2mat(Mscale);
+WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
 
-%%% solve
+%% optimize
+
 lambdas = 10.^linspace(-4,0,200);
 toggle_jointthresh = 4;
-[WS,loss_wsindy,its,G,b] = WS_opt().MSTLS_0(WS,'lambda',lambdas,'toggle_jointthresh',toggle_jointthresh, 'M_diag',Mscale);
-W_nd = cellfun(@(w,m)w./m,WS.reshape_w,Mscale,'un',0);
 
-%%% Diagnose
+MSTLS_params = {'lambda',lambdas,'toggle_jointthresh',toggle_jointthresh};
+[WS,loss_wsindy,its,G,b] = WS_opt().MSTLS(WS,MSTLS_params{:});
+
+%% Diagnose
+
 fprintf('\ndata dims =');
-arrayfun(@(U)fprintf('%u ',U.dims),Uobj);
+fprintf('%u ',Uobj.dims);
 fprintf('\n')
 
 Str_mod = WS.disp_mod;
@@ -93,21 +93,15 @@ for j=1:WS.numeq
 end
 
 fprintf('\n')
-resids = cellfun(@(G,w,b)norm(G*w-b)/norm(b),WS.Gs{1},W_nd,WS.bs{1});
-arrayfun(@(r)disp(['rel resid=',num2str(r)]),resids);
-cellfun(@(s)disp(['sparsity=',num2str(length(s))]),WS.get_supp)
+resids = WS.res('sepcomp');
+w_support = WS.get_supp;
+
+cellfun(@(r)disp(['rel resid=',num2str(norm(r))]),resids);
+cellfun(@(s)disp(['sparsity=',num2str(length(s))]),w_support)
 fprintf('\ntf rads=');
 cellfun(@(tf)fprintf('%u ',tf.rads),WS.tf{1});
 fprintf('\nsize G =')
 cellfun(@(G) fprintf('%d ',size(G)), WS.G)
-if ~exist('coltrim_fac','var')
-    coltrim_fac = 0;
-end
-if coltrim_fac
-    fprintf('\nsize G after coltrim =')
-    r_inds = arrayfun(@(j)col_trim_inds{j,loss_wsindy(j,:)==min(loss_wsindy(j,:))},1:WS.numeq,'un',0);
-    cellfun(@(l)fprintf('%d ',length(l)),r_inds)
-end
 fprintf('\ncond G =')
 fprintf('%1.1e ', cellfun(@(G)cond(G),WS.G));
 
@@ -123,62 +117,48 @@ if ~isempty(loss_wsindy)
     legend;
 end
 
+if exist('true_nz_weights','var')
+    w_true = inject_true_weights(WS,true_nz_weights);
+    Tps = tpscore(WS.weights,w_true);
+    fprintf('\nTPR=%1.2f',Tps)
+    E2 = norm(w_true-WS.weights)/norm(w_true);
+    fprintf('\nCoeff err=%1.2e',E2)
+end
+
+
 %% simulate learned and true reduced systems
 
-toggle_compare = 1:ntraj;
-toggle_display = 1;
+toggle_compare = 1; toggle_display = 1;
 if ~isempty(toggle_compare)
-    rhs_learned = WS.get_rhs('w',cell2mat(W_nd));
     tol_dd = 10^-12;
-    options_ode_sim = odeset('RelTol',tol_dd,'AbsTol',tol_dd*ones(1,nstates));
-    for i=toggle_compare
-        fprintf('\n------------dataset %i-------------',i)
-        t_train = Uobj(i).grid{1};
-        x0_data = Uobj(i).get_x0([]);
-        [t_learned,x_learned]=ode15s(@(t,x)rhs_learned(x),t_train,x0_data,options_ode_sim);
-        try
-            rel_forward_err = arrayfun(@(j)norm(x_learned(:,j)-Uobj(i).Uobs{j})/norm(Uobj(i).Uobs{j}),1:nstates);
-            fprintf('\nrel forward err=')
-            fprintf('%1.2e ',rel_forward_err)
-        catch
-            rel_forward_err = NaN;
-        end
+    x0_args = {[]};
 
-        if toggle_display
-            figure(7+i);clf
-            for j=1:nstates
-                subplot(nstates,1,j)
-                plot(Uobj(i).grid{1},Uobj(i).Uobs{j},'b-o',t_learned,x_learned(:,j),'r-.','linewidth',2)
-                try
-                    hold on
-                    plot(Uobj(i).grid{1},Uobj(i).Uobs{j}-Uobj(i).noise{j,1},'k-')
-                    legend({'data','learned','clean'})
-                catch
-                    legend({'data','learned'})
-                end
-                title(['rel err=',num2str(rel_forward_err(j))])
+    options_ode_sim = odeset('RelTol',tol_dd,'AbsTol',tol_dd*ones(1,Uobj.nstates));
+    rhs_learned = WS.get_rhs;
+    t_train = Uobj.grid{1};
+    x0_data = Uobj.get_x0(x0_args{:});
+    [t_learned,x_learned]=ode15s(@(t,x)rhs_learned(x),t_train,x0_data,options_ode_sim);
+    try
+        rel_forward_err = arrayfun(@(j)norm(x_learned(:,j)-Uobj.Uobs{j})/norm(Uobj.Uobs{j}),1:Uobj.nstates);
+        fprintf('\nrel forward err=')
+        fprintf('%1.2e ',rel_forward_err)
+    catch
+        rel_forward_err = NaN;
+    end
+
+    if toggle_display
+        figure(7);clf
+        for j=1:Uobj.nstates
+            subplot(Uobj.nstates,1,j)
+            plot(Uobj.grid{1},Uobj.Uobs{j},'b-o',t_learned,x_learned(:,j),'r-.','linewidth',2)
+            try
+                hold on
+                plot(Uobj.grid{1},Uobj.Uobs{j}-Uobj.noise{j,1},'k-')
+                legend({'data','learned','clean'})
+            catch
+                legend({'data','learned'})
             end
+            title(['rel err=',num2str(rel_forward_err(j))])
         end
-    end
-end
-
-function dxdt = rhs_p(t,x,p)
-    % graph is a ring, with nonlinear activation from "right" neighbor, nonlinear self inhibition" 
-    n = p(end);
-    dxdt = p(1)*x(:).^p(3);
-    for i=1:n-1
-        dxdt(i) = dxdt(i) + p(2)*x(i).*x(i+1).^p(4);
-    end
-    dxdt(n) = dxdt(n) + p(2)*x(n).*x(1).^p(4);
-end
-
-function true_nz_weights = get_true_weights(p)
-    n = p(end);
-    foo = [p(3)*eye(n) p(1)*ones(n,1)];
-    true_nz_weights = arrayfun(@(i)foo(i,:),1:n,'un',0);
-    c = [1,p(4),zeros(1,n-2)];
-    for i=1:n
-        true_nz_weights{i} = [true_nz_weights{i}; [c,p(2)]];
-        c = circshift(c,1);
     end
 end

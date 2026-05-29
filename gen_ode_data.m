@@ -2,7 +2,12 @@ function [weights,x,t,x0,ode_name,ode_params,rhs] = gen_ode_data(ode_num,ode_par
 
 % Simulate ODE
     ode_names = {'Linear','Logistic_Growth','Van_der_Pol','Duffing','Lotka_Volterra','Lorenz','Rossler','rational','Oregonator','Hindmarsh-Rose','Pendulum','custom'};
-    ode_name = ode_names{ode_num};
+    if isstr(ode_num)
+        ode_name = ode_num;
+    else
+        ode_name = ode_names{ode_num};
+    end
+    
     if strcmp(ode_name, 'Linear')%1
         % ll-dim
         ll = 2;

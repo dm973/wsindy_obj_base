@@ -23,24 +23,23 @@ function tags = get_tags(polys,trigs,n,varargin)
         a = (-ones(1,n)).^de2bi(0:2^n-1);
         tags = cell2mat(arrayfun(@(i)tags*diag(a(i,:)),(1:2^n)','uni',0));
     end
-    tags = unique(tags(boolT(tags),:),'rows');
-
+    tags = unique(tags(boolT(tags),:),'rows','stable');
     if isvector(trigs)
         for k=1:length(trigs)
             trig_inds = [-trigs(k)*1i*eye(n);trigs(k)*1i*eye(n)];
             tags = [tags; trig_inds];
         end
-        tags = unique(tags,'rows');
+        tags = unique(tags,'rows','stable');
     else
         for k=1:size(trigs,1)
             trig_inds = [-1i*diag(trigs(k,:));1i*diag(trigs(k,:))];
             tags = [tags; trig_inds];
         end
-        tags = unique(tags,'rows');
+        tags = unique(tags,'rows','stable');
     end
 
     if ~uni
         tags = mat2cell(tags,ones(size(tags,1),1),size(tags,2));
     end
-
+    
 end
