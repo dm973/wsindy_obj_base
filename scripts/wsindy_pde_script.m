@@ -1,5 +1,5 @@
 %% add wsindy_obj_base to path
-addpath(genpath('../'))
+% addpath(genpath('../'))
 
 %% load data
 
@@ -12,30 +12,32 @@ pde_names = {'burgers.mat',...
              'sod_exact.mat',...
     };
 
-pde_num = 3; % set to 0 to run on pre-loaded dataset
+pde_num = 0; % set to 0 to run on pre-loaded dataset
 
 if pde_num~=0
     pde_name = pde_names{pde_num};
     load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
+else
+    pde_name = 'custom';
 end
 
 %% create data object
 Uobj = wsindy_data(U_exact,xs);
 
 %%% coarsen spacetime grid
-Uobj.coarsen(3);
+Uobj.coarsen(4);
 
 %%% add noise
-Uobj.addnoise(0.4);
+Uobj.addnoise(0.0);
 
 %%% set library
 x_diffs = [0:4];%%% differential operators
 polys = [0:4]; trigs = [];%%% poly/trig functions
 custom_add =  {...  %%% custom terms using term algebra
         term('fHandle',@(u,v) exp(sin(u+u.^2))),...                               % arbitrary term specified by function handle    
-        compterm(term('ftag',2), diffOp([1,0],'stateind',2)),...                   % term nonlinear in a derivative
-        prodterm(term('ftag',[-2i 2i]), diffOp([2,0],'stateind',1, 'nstates', 2)),...                 % product of two terms
-        addterm(diffOp([3,0],'stateind',1, 'nstates', 2), term('fHandle',@(u,v) tanh(u+v))),...              % sum of two terms
+        % compterm(term('ftag',2), diffOp([1,0],'stateind',2)),...                   % term nonlinear in a derivative
+        % prodterm(term('ftag',[-2i 2i]), diffOp([2,0],'stateind',1, 'nstates', 2)),...                 % product of two terms
+        % addterm(diffOp([3,0],'stateind',1, 'nstates', 2), term('fHandle',@(u,v) tanh(u+v))),...              % sum of two terms
     };
 
 custom_remove_f = {}; %{@(tag) all(tag(Uobj.nstates+1:Uobj.nstates+Uobj.ndims-1))};  % remove all cross derivatives
@@ -51,7 +53,7 @@ tf_args = {'phifuns',phifun,'meth','FFT','param',tf_param,'subinds',-3};
 tf = testfcn(Uobj,tf_args{:});
 
 %%% scale data
-Uobj.set_scales([],'lib',lib,'tf',tf);
+% Uobj.set_scales([],'lib',lib,'tf',tf);
 tf = testfcn(Uobj,tf_args{:});
 
 WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
@@ -88,17 +90,20 @@ for j=1:WS.numeq
 end
 cellfun(@(G)fprintf('cond(g)=%1.2e \n',cond(G)),WS.G)
 
-w_true = WS.reshape_w; w_true = cellfun(@(w)w*0,w_true,'un',0);
-for i=1:WS.numeq
-    tags = WS.lib(i).tags(:);
-    ii = ~cellfun(@(tt) isnumeric(tt),tags);
-    tags(ii) = repmat({zeros(1,Uobj.nstates+Uobj.ndims)},length(find(ii)),1);
-    w_true{i}(ismember(cell2mat(tags),true_nz_weights{i}(:,1:end-1),'rows')) = ...
-        true_nz_weights{i}(:,end);
+try
+    w_true = WS.reshape_w; w_true = cellfun(@(w)w*0,w_true,'un',0);
+    for i=1:WS.numeq
+        tags = WS.lib(i).tags(:);
+        ii = ~cellfun(@(tt) isnumeric(tt),tags);
+        tags(ii) = repmat({zeros(1,Uobj.nstates+Uobj.ndims)},length(find(ii)),1);
+        w_true{i}(ismember(cell2mat(tags),true_nz_weights{i}(:,1:end-1),'rows')) = ...
+            true_nz_weights{i}(:,end);
+    end
+    cellfun(@(w,v)fprintf('coeff err=%1.2e\n',norm(w-v)/norm(v)),w_true,WS.reshape_w)
+    cellfun(@(w,v)fprintf('supp rec=%i\n',isequal(find(w),find(v))),w_true,WS.reshape_w)
+catch
+    fprintf('no model to compare to')
 end
-cellfun(@(w,v)fprintf('coeff err=%1.2e\n',norm(w-v)/norm(v)),w_true,WS.reshape_w)
-cellfun(@(w,v)fprintf('supp rec=%i\n',isequal(find(w),find(v))),w_true,WS.reshape_w)
-
 
 %%% display data
 figure(1);clf;

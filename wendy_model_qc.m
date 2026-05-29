@@ -35,7 +35,7 @@ classdef wendy_model_qc < wendy_model
                         else
                             term_temp1 = obj.lib(n).terms{j};
                         end
-                        Ltilde = obj.get_Ltilde(term_temp1,nt,n);
+                        Ltilde = obj.getLfacj(obj.dat(nt),term_temp1,obj.tf{nt}{n},obj.coarsen_L,{});
                         Ltilde = Ltilde*R0;
                         for m=1:n
                             if m==n
@@ -49,8 +49,13 @@ classdef wendy_model_qc < wendy_model
                                 else
                                     term_temp2 = obj.lib(m).terms{jj};
                                 end
-                                if any( abs(term_temp1.ftag) & abs(term_temp2.ftag) ) % assuming noise is independent between compartments (R0 is block diagonal)
-                                    Ltilde2 = obj.get_Ltilde(term_temp2,nt,m);
+                                try
+                                    check=any( abs(term_temp1.ftag) & abs(term_temp2.ftag) );
+                                catch
+                                    check=true;
+                                end
+                                if  check % assuming noise is independent between compartments (R0 is block diagonal)
+                                    Ltilde2 = obj.getLfacj(obj.dat(nt),term_temp2,obj.tf{nt}{m},obj.coarsen_L,{});
                                     obj.Cfacs{nt,n,m}{j+1,jj+1} = Ltilde*Ltilde2';
                                 end
                             end
@@ -58,17 +63,6 @@ classdef wendy_model_qc < wendy_model
                     end
                 end
             end
-        end
-
-        function L = get_Ltilde(obj,tt,nt,m)
-            A = tt.diffmat(obj.dat(nt));
-            A = cell2mat(A(:)');
-            V = obj.tf{nt}{m}.get_testmat(tt.linOp);
-            L = V*A;
-            % A = tt.evalgrads(obj.dat(nt));
-            % V = obj.tf{nt}{m}.get_testmat(tt.linOp);
-            % A = cellfun(@(g)V.*g(:)',A,'un',0);
-            % L = cell2mat(A(:)');
         end
 
         function obj = get_cov(obj,w)

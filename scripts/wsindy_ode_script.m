@@ -1,14 +1,17 @@
 %% add wsindy_obj_base to path
 addpath(genpath('../'))
+close all; clear all;
 
 %% load data
 nstates = 5;
 tol_ode = 10^-10;
 t = linspace(0,5,100);
 p = [-1,1,3,2,nstates];
+
+true_nz_weights = get_true_weights(p);
 rhs_true = @(x) rhs_p(t,x,p);
 
-ntraj = 25;
+ntraj = 10;
 xcell = cell(ntraj,1);
 tcell = cell(ntraj,1);
 for i=1:ntraj
@@ -30,7 +33,7 @@ ntraj = length(Uobj);
 nstates = Uobj.nstates;
 M = Uobj.dims;
 
-noise_ratio = 0.01;
+noise_ratio = 0.0;
 rng('shuffle')
 rng_seed = rng().Seed; rng(rng_seed);
 arrayfun(@(U)U.addnoise(noise_ratio,'seed',rng_seed),Uobj);
@@ -60,7 +63,7 @@ lib = library('tags',tags);
 
 %% get test function
 
-tf = arrayfun(@(U)testfcn(U,'phifuns',optTFcos(3,0),'meth','FFT','param',1,'subinds',-3),Uobj,'un',0);
+tf = arrayfun(@(U)testfcn(U,'phifuns',optTFcos(1,2),'meth','FFT','param',1,'subinds',-4),Uobj,'un',0);
 
 %% build WSINDy linear system
 WS = wsindy_model(Uobj,lib,tf);
@@ -160,10 +163,22 @@ if ~isempty(toggle_compare)
 end
 
 function dxdt = rhs_p(t,x,p)
+    % graph is a ring, with nonlinear activation from "right" neighbor, nonlinear self inhibition" 
     n = p(end);
     dxdt = p(1)*x(:).^p(3);
     for i=1:n-1
         dxdt(i) = dxdt(i) + p(2)*x(i).*x(i+1).^p(4);
     end
     dxdt(n) = dxdt(n) + p(2)*x(n).*x(1).^p(4);
+end
+
+function true_nz_weights = get_true_weights(p)
+    n = p(end);
+    foo = [p(3)*eye(n) p(1)*ones(n,1)];
+    true_nz_weights = arrayfun(@(i)foo(i,:),1:n,'un',0);
+    c = [1,p(4),zeros(1,n-2)];
+    for i=1:n
+        true_nz_weights{i} = [true_nz_weights{i}; [c,p(2)]];
+        c = circshift(c,1);
+    end
 end

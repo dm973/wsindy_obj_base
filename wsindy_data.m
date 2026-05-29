@@ -271,35 +271,52 @@ classdef wsindy_data < handle
 
         function sig = estimate_sigma(obj,varargin)
 
-            default_ord = min(floor((min(obj.dims)-1)/2),6);
             p = inputParser;
-            addParameter(p,'ord',default_ord);
+            addParameter(p,'ord',min(min(obj.dims)-1,6));
             addParameter(p,'alg','AWGN');
-            addParameter(p,'set',false);
+            addParameter(p,'set',true);
+            addParameter(p,'use_existing',true);
             parse(p,varargin{:})
 
             ord = p.Results.ord;
             alg = p.Results.alg;
- 
-            C = fdcoeffF(ord,0,-ord:ord);
-            filter = C(:,end);
-            filter = filter/norm(filter,2);
-            if obj.ndims > 1
-                [~,ind] = max(size(obj.Uobs{1}));
-                sig = cellfun(@(U)rms(reshape(convn(permute(U,[ind 1:ind-1 ind+1:obj.ndims]),filter(:),'valid'),[],1)),obj.Uobs,'uni',0);
+            use_existing = p.Results.use_existing;
+
+            if and(all(cellfun(@(s)~isempty(s),obj.sigmas)), use_existing)
+                sig = obj.sigmas;
             else
-                if isequal(alg,'AWGN')
-                    sig = cellfun(@(U)rms(conv(U,filter(:),'valid')),obj.Uobs,'uni',0);
-                elseif isequal(alg,'logn')
-                    sig = cellfun(@(U)rms(conv(log(U),filter(:),'valid')),obj.Uobs);
-                    sig = sqrt((exp(sig.^2)-1).*exp(2*cellfun(@(U)mean(log(U)),obj.Uobs)+(sig.^2)));
-                    sig = num2cell(sig);
+                C = fdcoeffF(ord,0,-ceil(ord/2):ceil(ord/2));
+                % C = fdcoeffF(ord,0,-ord:ord)
+                filter = C(:,end);
+                filter = filter/norm(filter,2);
+                if obj.ndims > 1
+                    % [~,ind] = max(obj.dims);
+                    % sig = cellfun(@(U)std(reshape(convn(permute(U,[ind 1:ind-1 ind+1:obj.ndims]),filter(:),'valid'),[],1)),obj.Uobs,'uni',0);
+                    % for ind=1:obj.ndims
+                    %     sig(ind,:) = cellfun(@(U)std(reshape(convn(permute(U,[ind 1:ind-1 ind+1:obj.ndims]),filter(:),'valid'),[],1)),obj.Uobs);
+                    % end
+                    % 
+                    % sig = num2cell(mean(sig));
+
+                    sig = cellfun(@(U)convn(U,filter(:),'valid'),obj.Uobs,'uni',0);
+                    for ind=2:obj.ndims
+                        sig = cellfun(@(U)convn(permute(U,[ind 1:ind-1 ind+1:obj.ndims]),filter(:),'valid'),sig,'uni',0);
+                    end
+                    sig = cellfun(@(S)std(S(:)),sig,'uni',0);
+                else
+                    if isequal(alg,'AWGN')
+                        sig = cellfun(@(U)std(conv(U,filter(:),'valid')),obj.Uobs,'uni',0);
+                    elseif isequal(alg,'logn')
+                        sig = cellfun(@(U)std(conv(log(U),filter(:),'valid')),obj.Uobs);
+                        sig = sqrt((exp(sig.^2)-1).*exp(2*cellfun(@(U)mean(log(U)),obj.Uobs)+(sig.^2)));
+                        sig = num2cell(sig);
+                    end
+    
                 end
-
-            end
-
-            if p.Results.set
-                obj.sigmas = sig;
+    
+                if p.Results.set
+                    obj.sigmas = sig;
+                end
             end
 
         end
@@ -490,15 +507,10 @@ classdef wsindy_data < handle
             obj.scales = scales;
         end
 
-    end
-
-    methods (Hidden = true)
-
-        function obj = get_dims(obj)
-            obj.dims = cellfun(@(x)length(x),obj.grid(:));
-        end
-
-        function obj = coarsen_dim(obj,s,d)
+        function [obj,s] = coarsen_dim(obj,s,d)
+            if s<0
+                s = max(floor(obj.dims(d)/(-s)),1);
+            end
             if ~exist('d','var')
                 d=1;
             end
@@ -516,6 +528,16 @@ classdef wsindy_data < handle
                     obj.grid{i} = obj.grid{i}(inds{:});
                 end
             end
+            obj = obj.get_dims;
+        end
+
+    end
+
+    methods (Hidden = true)
+
+        function obj = get_dims(obj)
+            obj.dims = cellfun(@(x)length(x),obj.grid(:));
+            obj.dv = cellfun(@(g) mean(diff(g)), obj.grid);
         end
 
         function obj = trimend_dim(obj,s,d)

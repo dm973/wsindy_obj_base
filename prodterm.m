@@ -7,15 +7,12 @@ classdef prodterm < term
     methods
         function obj = prodterm(t1,t2,varargin)
             obj = obj@term('gradon',0);
-            default_gradon = 0;
-            default_gradterms = {};
-            default_linOp = [];
             p = inputParser;
             addRequired(p,'t1');
             addRequired(p,'t2');
-            addParameter(p,'gradon',default_gradon);
-            addParameter(p,'gradterms',default_gradterms);
-            addParameter(p,'linOp',default_linOp);
+            addParameter(p,'gradon',0);
+            addParameter(p,'gradterms',[]);
+            addParameter(p,'linOp',[]);
 
             if isequal(class(t1),'function_handle')
                 t1 = term('fHandle',t1);
@@ -74,6 +71,26 @@ classdef prodterm < term
             if isequal(class(obj.linOp),'diffOp')
                     s = ['(d/dt)^',num2str(obj.linOp.difftags),s];
             end
+        end
+
+        function Y = diffmat(obj,dat,varargin)
+            p = inputParser;
+            addParameter(p,'toggle_noisefree',false);
+            parse(p,varargin{:})
+            toggle_noisefree = p.Results.toggle_noisefree;
+            if toggle_noisefree
+                noisefreeargs = {'toggle_noisefree',toggle_noisefree};
+            else
+                noisefreeargs = {};
+            end
+            
+            f1 = obj.t1.evalterm(dat);
+            f1 = f1(:);
+            f1grad = obj.t1.diffmat(dat);
+            f2 = obj.t2.evalterm(dat);
+            f2 = f2(:);
+            f2grad = obj.t2.diffmat(dat);
+            Y = cellfun(@(g1,g2) f1.*g2+f2.*g1,f1grad,f2grad,'un',0);
         end
         
         function m = get_scale(obj,scales)

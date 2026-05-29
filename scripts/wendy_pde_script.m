@@ -10,6 +10,7 @@ pde_names = {'burgers.mat',...
              'NLS.mat',...               
              'porous2.mat',... 
              'sod_exact.mat',...
+             'lin_schrod2.mat'...
     };
 
 pde_num = 3; % set to 0 to run on pre-loaded dataset
@@ -26,12 +27,13 @@ Uobj = wsindy_data(U_exact,xs);
 nstates = Uobj.nstates;
 
 %%% coarsen data
-Uobj.coarsen(3);
+Uobj.trimend(512,2);
+Uobj.coarsen([-64,-64]);
 fprintf('\ndata dims=');fprintf('%u ',Uobj.dims);fprintf('\n')
 
 %%% add noise
-noise_ratio = 0.4;
-rng('shuffle') % comment out to reproduce results
+noise_ratio = 0.5;
+rng(1) % comment out to reproduce results
 rng_seed = rng().Seed; rng(rng_seed); 
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
 
@@ -51,11 +53,13 @@ if toggle_strong_form==1
 else
     phifun = 'pp';
     tf_meth = 'FFT';
-    tau = 10^-10;
-    tauhat = 1;
+    % tau = 10^-10;
+    % tauhat = 2;
+    tauhat =  2*sqrt(max(x_diffs(:)+1));%ceil(min(Uobj.ks(:).^( 1/(1+2/max(x_diffs)) )));
+    tau = max(Uobj.dims/2).^-(2+max(x_diffs)); 
     tf_param = {[tau tauhat max(x_diffs(:))],[tau tauhat max(lhs(:,end))]};
 
-    subinds = -3;
+    subinds = -4;
 end
 tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
     'meth',tf_meth,'param',tf_param,'stateind',find(lhs(i,1:nstates),1)),(1:size(lhs,1))','uni',0);
@@ -63,10 +67,13 @@ fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
 %% build WSINDy linear system
 tic;
-WS = wendy_model(Uobj,lib,tf,[2 1],'lhsterms',lhs);
+WS = wendy_model(Uobj,lib,tf,[1 0],'lhsterms',lhs);
 
 %% WENDy solve
-[WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,'maxits',100,'ittol',10^-4,'diag_reg',10^-inf,'trim_rows',1);
+sigma_est = Uobj.estimate_sigma;
+diag_reg = min(1,(1/prod(Uobj.dims)/max(cell2mat(Uobj.sigmas)))^2);
+
+[WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,'maxits',100,'ittol',10^-4,'diag_reg',diag_reg,'trim_rows',1);
 total_time_wendy = toc;
 
 %% view governing equations, MSTLS loss, learned model accuracy

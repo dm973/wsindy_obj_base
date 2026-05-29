@@ -6,24 +6,15 @@ classdef term < absterm
 
     methods
         function obj = term(varargin)
-            default_linOp = [];
-            default_ftag = [];
-            default_fHandle = [];
-            default_gradterms = [];
-            default_nstates = 0;
-            default_coeff = 1;
-            default_gradon = 1;
-            default_tol = eps;
-
             p = inputParser;
-            addParameter(p,'ftag',default_ftag);
-            addParameter(p,'linOp',default_linOp);
-            addParameter(p,'fHandle',default_fHandle);
-            addParameter(p,'gradterms',default_gradterms);
-            addParameter(p,'nstates',default_nstates);
-            addParameter(p,'coeff',default_coeff);
-            addParameter(p,'gradon',default_gradon);
-            addParameter(p,'tol',default_tol);
+            addParameter(p,'ftag',[]);
+            addParameter(p,'linOp',[]);
+            addParameter(p,'fHandle',[]);
+            addParameter(p,'gradterms',[]);
+            addParameter(p,'nstates',0);
+            addParameter(p,'coeff',1);
+            addParameter(p,'gradon',1);
+            addParameter(p,'tol',eps);
             parse(p,varargin{:})
 
             obj.ftag = p.Results.ftag;
@@ -35,7 +26,6 @@ classdef term < absterm
             obj.gradon = p.Results.gradon;
             obj.tol = p.Results.tol;
 
-
             if ~isempty(obj.ftag)
                 obj = obj.set_tag;
             elseif ~isempty(obj.fHandle)
@@ -44,38 +34,37 @@ classdef term < absterm
 
             obj.set_linOp(obj.linOp);
 
-            % if ~isempty(obj.linOp)
-            %     if isequal(class(obj.linOp),'double')
-            %         if ~isequal(obj.linOp,0)
-            %             obj.linOp = diffOp(obj.linOp,'nstates',obj.nstates);
-            %         else
-            %             obj.linOp = [];
-            %         end
-            %     end
-            % end
-
-            % if and(obj.gradon,isempty(obj.gradterms))
-            %     obj = obj.get_grads;
-            % end
-
         end
 
     end
 
     methods
 
-        function Y = evalterm(obj,dat) % only fHandle
+        function Y = evalterm(obj,dat,varargin) % only fHandle
+            p = inputParser;
+            addParameter(p,'toggle_noisefree',false);
+            parse(p,varargin{:})
+            toggle_noisefree = p.Results.toggle_noisefree;
+
             if isequal(class(dat),'cell')
                 Y = obj.fHandle(dat{:});
             elseif isequal(class(dat),'wsindy_data')
                 s = dat.scales;
+                if toggle_noisefree
+                    try
+                        U = cellfun(@(U,N)U-N,dat.Uobs,dat.noise(:,1),'un',0); 
+                    catch
+                        U = dat.Uobs;
+                    end
+                else
+                    U = dat.Uobs;
+                end
                 if and(obj.get_scale(s) == 1,~isempty(s))
                     s = num2cell(s);
-                    U = dat.Uobs;
                     U = cellfun(@(u,s)u*s,U,s(1:dat.nstates),'un',0);
                     Y = obj.fHandle(U{:});
                 else
-                    Y = obj.fHandle(dat.Uobs{:});            
+                    Y = obj.fHandle(U{:});          
                 end
             elseif isequal(class(dat),'double')
                 Xcell = obj.dat2cell(dat);
@@ -100,16 +89,35 @@ classdef term < absterm
             end
         end
 
-        function Y = evalgrads(obj,dat)
+        function Y = evalgrads(obj,dat,varargin) % only fHandle
+            p = inputParser;
+            addParameter(p,'toggle_noisefree',false);
+            parse(p,varargin{:})
+            toggle_noisefree = p.Results.toggle_noisefree;
+            if toggle_noisefree
+                noisefreeargs = {'toggle_noisefree',toggle_noisefree};
+            else
+                noisefreeargs = {};
+            end
+
             if isempty(obj.gradterms)
                 obj = obj.get_grads;
                 obj.gradon = 1;
             end
-            Y = arrayfun(@(g)g.evalterm(dat),obj.gradterms,'uni',0);
+            Y = arrayfun(@(g)g.evalterm(dat,noisefreeargs{:}),obj.gradterms,'uni',0);
         end
 
-        function Y = diffmat(obj,dat)
-            Y = cellfun(@(g) spdiags(g(:),0,length(g(:)),length(g(:))),evalgrads(obj,dat),'uni',0);
+        function Y = diffmat(obj,dat,varargin)
+            p = inputParser;
+            addParameter(p,'toggle_noisefree',false);
+            parse(p,varargin{:})
+            toggle_noisefree = p.Results.toggle_noisefree;
+            if toggle_noisefree
+                noisefreeargs = {'toggle_noisefree',toggle_noisefree};
+            else
+                noisefreeargs = {};
+            end
+            Y = cellfun(@(g) spdiags(g(:),0,length(g(:)),length(g(:))),evalgrads(obj,dat,noisefreeargs{:}),'uni',0);
         end
 
         function tt = get_taylor(obj,pt,ord,toggleH)
@@ -465,9 +473,6 @@ classdef term < absterm
                 obj.gradterms(n).get_grads;
             end
             lap = arrayfun(@(n)obj.gradterms(n).gradterms(n),1:obj.nstates);
-            % for n=2:obj.nstates
-            %     lap = addterm(lap,obj.gradterms(n).gradterms(n));
-            % end
         end
         function hess = get_hess(obj)
             if isempty(obj.gradterms)

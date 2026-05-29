@@ -7,7 +7,7 @@ function kx = getcorner(Ufft,xx,toggle_plot)
     Ufft = Ufft(:);
     NN = length(Ufft);
 
-    meth=1;
+    meth=3;
 
     if meth==1 %tilted graph
         [~,Umax] = max(Ufft);

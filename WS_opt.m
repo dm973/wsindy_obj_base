@@ -657,7 +657,7 @@ classdef WS_opt < handle
 
                 if isempty(x0)
                     if diff(size(A))>=0
-                        % 
+
                         % reg0 = rank(A,norm(A)*10^-4);
                         % reg_inds = abs(b'*A)./vecnorm(A)/norm(b);
                         % [~,reg_inds] = sort(reg_inds,'descend');
@@ -781,12 +781,15 @@ classdef WS_opt < handle
             end
 
             w_its = WS.weights;
-            res_0 = [];
-            res = [];
             its = 0;
             WS.cat_Gb('cat','blkdiag');
             G_0 = WS.G{1};
             b_0 = WS.b{1};
+            WS.dat.estimate_sigma;
+            G = G_0/mean(sqrt(cell2mat(WS.dat.sigmas)));
+            b = b_0/mean(sqrt(cell2mat(WS.dat.sigmas)));
+            res_0 = G_0*w_its-b_0;
+            res = res_0;
 
             while and(check,its<maxits)
                 if isequal(verbosity,'iter')
@@ -826,6 +829,25 @@ classdef WS_opt < handle
             if isequal(CovW_type, 'C-R')
             %%% Cramer-Rao inspired covariance (more consistent with WENDy parameter distribution)
                 CovW = inv(G'*G);
+                try 
+                    if and(WS.statcorrect(1)>1,WS.statcorrect(1)<2)
+                        % fprintf('\ncorrecting CovW')
+                        if any(arrayfun(@(L) any(cellfun(@(tt)~isnumeric(tt),L.tags)), WS.lib))
+                            Umax = 1;
+                        else
+                            pmax = max(arrayfun(@(L) max(cellfun(@(tt)max(tt(1:WS.nstates)),L.tags)), WS.lib));
+                            Umax = pmax*(pmax-1);
+                            Umax = Umax*mean(arrayfun(@(Uobj) max(cellfun(@(U) mean(abs(U(:)).^(pmax-2)), Uobj.Uobs)), WS.dat));
+                        end
+
+                        hess_proxy = norm(WS.weights)^2*Umax^2*WS.nstates^2*...
+                            max(cell2mat(WS.dat.sigmas).^4)/4*...
+                            prod(cellfun(@(C)norm(C(end,:))^2,WS.tf{1}{1}.Cfs));
+
+                        Ginv = pinv(G);
+                        CovW = CovW + hess_proxy*(Ginv*Ginv');
+                    end
+                end
             elseif isequal(CovW_type, 'OLS')
             %%% OLS left-inverse to compute parameter covariance
                 Ginv = Ginv*RT;

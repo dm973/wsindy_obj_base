@@ -27,6 +27,7 @@ classdef diffOp < linearOp
             addParameter(p,'gradon',default_gradon);
             addParameter(p,'w',default_w);
             addParameter(p,'dat',default_dat);
+            addParameter(p,'diffmat_args',{});
             parse(p,difftags,varargin{:})
 
             obj.Dmats = [];
@@ -39,9 +40,10 @@ classdef diffOp < linearOp
             obj.meth = p.Results.meth;
             obj.gradon = p.Results.gradon;
             obj.w = p.Results.w;
+            diffmat_args = p.Results.diffmat_args;
             dat = p.Results.dat;
             if ~isempty(dat)
-                obj = obj.get_Dmats(dat);
+                obj = obj.get_Dmats(dat,diffmat_args{:});
             end
 
             if and(obj.gradon,isempty(obj.gradterms))
@@ -83,11 +85,15 @@ classdef diffOp < linearOp
 
             for j=1:length(obj.Dmats)
                 if obj.difftags(j)~=0
-                    shift = 1:length(obj.Dmats);
-                    shift([1 j]) = [j 1];
-                    Y = permute(Y,shift);
-                    Y = pagemtimes(full(obj.Dmats{j}),Y);
-                    Y = permute(Y,shift);
+                    if isvector(Y)
+                        Y = obj.Dmats{j}*Y;
+                    else
+                        shift = 1:length(obj.Dmats);
+                        shift([1 j]) = [j 1];
+                        Y = permute(Y,shift);
+                        Y = pagemtimes(full(obj.Dmats{j}),Y);
+                        Y = permute(Y,shift);
+                    end
                 end
             end
         end
@@ -133,7 +139,14 @@ classdef diffOp < linearOp
             % Y{obj.stateind} = obj.evalterm(dat);
         end
 
-        function obj = get_Dmats(obj,dat)
+        function obj = get_Dmats(obj,dat,varargin)
+
+            p = inputParser;
+            addParameter(p,'diffmat_args',{});
+            parse(p,varargin{:})
+
+            diffmat_args = p.Results.diffmat_args;
+
             if isnan(obj.difftags)
                 obj.Dmats = arrayfun(@(i)sparse(dat.dims(i),dat.dims(i)),(1:dat.ndims)','uni',0);
             else   
@@ -143,6 +156,8 @@ classdef diffOp < linearOp
                     obj.Dmats = obj.wfMats(dat);
                 elseif isequal(obj.meth,'wffd')
                     obj.Dmats = obj.wffdMats(dat);
+                elseif isequal(obj.meth,'lp')
+                    obj.Dmats = obj.lpMats(dat,diffmat_args{:});
                 end
             end
         end
@@ -165,7 +180,6 @@ classdef diffOp < linearOp
                 rhs = @(varargin) varargin{x};
             end
         end
-
 
     end
 
@@ -205,53 +219,55 @@ classdef diffOp < linearOp
                 Dmats = cell(dat.ndims,1);
                 dat.getcorners;
                 for i=1:dat.ndims
-                    k_x = dat.ks(i);
-                    dv = mean(diff(dat.grid{i}));
-
-                    eta = 9;
-                    phi = @(t) (1-t.^2).^eta;
-                    phip = @(t) (-2*eta)*(t.*(1-t.^2).^(eta-1));
-                    if isempty(obj.w)
-                        tauhat = 2;
-                        % obj.w = get_tf_support(phi, dat.dims(i), tauhat, k_x);
-                        obj.w = ceil(tauhat*dat.dims(i)*sqrt(eta*2+3)/2/pi/k_x);
+                    if obj.difftags(i)~=0
+                        k_x = dat.ks(i);
+                        dv = mean(diff(dat.grid{i}));
+    
+                        eta = 7;
+                        phi = @(t) (1-t.^2).^eta;
+                        phip = @(t) (-2*eta)*(t.*(1-t.^2).^(eta-1));
+                        if isempty(obj.w)
+                            tauhat = 2;%sqrt(2);
+                            % obj.w = get_tf_support(phi, dat.dims(i), tauhat, k_x);
+                            obj.w = ceil(tauhat*dat.dims(i)*sqrt(eta*2+3)/2/pi/k_x);
+                        end
+                        xf = linspace(-1,1,2*obj.w+1);
+                        Cfs = zeros(2,2*obj.w+1);
+                        Cfs(1,:) = phi(xf);
+                        if obj.difftags(i)>1
+                            syms y;
+                            phip = matlabFunction(diff(phi(y),obj.difftags(i)));
+                        end
+                        Cfs(2,:) = phip(xf)*(obj.w*dv).^-obj.difftags(i);
+    
+                        Vp = obj.antisymconvmtx(Cfs(2,:),dat.dims(i));
+                        V = obj.symconvmtx(Cfs(1,:),dat.dims(i));
+    
+                        [Uu,Ss,Vv] = svd(full(V),0);
+                        ss = findchangepts(diag(Ss),'Statistic','linear');
+                        % ss = floor(0.2*size(Vv,2)+0.8*ss);
+                        % disp(norm(diag(Ss(1:ss,1:ss)))/norm(diag(Ss)))
+                        % ss = size(Vv,2);
+                        Dmats{i} = Vv(:,1:ss)*diag(1./diag(Ss(1:ss,1:ss)))*Uu(:,1:ss)'*Vp;
+    
+                                            % s = ceil(obj.w/5);
+                        % Vp = Vp(1:s:end,:); V = V(1:s:end,:);
+                        % plot(diag(Ss))
+                        % ss = getcorner(diag(Ss),1:size(Ss,2));
+                        % F = dftmtx(dat.dims(i));
+                        % A = real(F(:,1:k_x)*F(:,1:k_x)'*Vv*Ss)/dat.dims(i);
+                        % size(A)
+                        % plot(fliplr(vecnorm(A-Vv*Ss)./vecnorm(Vv*Ss)))
+                        % ss = getcorner(fliplr(vecnorm(A-Vv*Ss)),1:size(A,2));
+                        % ss = size(A,2) - ss/2 + 1;
+                        % ss = floor(ss);
+                        % bc_ind = 3;%ceil(obj.w/2);
+                        % bc = [repmat(Dmats{i}(bc_ind+1,:),bc_ind,1);...
+                            % repmat(Dmats{i}(dat.dims(i)-bc_ind,:),bc_ind,1)];
+                        % Dmats{i}([1:bc_ind dat.dims(i)-bc_ind+1:dat.dims(i)],:) = bc;
+                    else
+                        Dmats{i} = spdiags(ones(dat.dims(i),1), 0, dat.dims(i), dat.dims(i));
                     end
-                    xf = linspace(-1,1,2*obj.w+1);
-                    Cfs = zeros(2,2*obj.w+1);
-                    Cfs(1,:) = phi(xf);
-                    if obj.difftags(i)>1
-                        syms y;
-                        phip = matlabFunction(diff(phi(y),obj.difftags(i)));
-                    end
-                    Cfs(2,:) = phip(xf)*(obj.w*dv).^-obj.difftags(i);
-
-                    Vp = obj.antisymconvmtx(Cfs(2,:),dat.dims(i));
-                    V = obj.symconvmtx(Cfs(1,:),dat.dims(i));
-
-                    [Uu,Ss,Vv] = svd(full(V),0);
-                    % figure
-                    % findchangepts(diag(Ss),'Statistic','linear')
-                    ss = findchangepts(diag(Ss),'Statistic','linear');
-                    % disp(norm(diag(Ss(1:ss,1:ss)))/norm(diag(Ss)))
-                    % ss = size(Vv,2);
-                    Dmats{i} = Vv(:,1:ss)*diag(1./diag(Ss(1:ss,1:ss)))*Uu(:,1:ss)'*Vp;
-
-                                        % s = ceil(obj.w/5);
-                    % Vp = Vp(1:s:end,:); V = V(1:s:end,:);
-                    % plot(diag(Ss))
-                    % ss = getcorner(diag(Ss),1:size(Ss,2));
-                    % F = dftmtx(dat.dims(i));
-                    % A = real(F(:,1:k_x)*F(:,1:k_x)'*Vv*Ss)/dat.dims(i);
-                    % size(A)
-                    % plot(fliplr(vecnorm(A-Vv*Ss)./vecnorm(Vv*Ss)))
-                    % ss = getcorner(fliplr(vecnorm(A-Vv*Ss)),1:size(A,2));
-                    % ss = size(A,2) - ss/2 + 1;
-                    % ss = floor(ss);
-                    bc_ind = 3;%ceil(obj.w/2);
-                    bc = [repmat(Dmats{i}(bc_ind+1,:),bc_ind,1);...
-                        repmat(Dmats{i}(dat.dims(i)-bc_ind,:),bc_ind,1)];
-                    Dmats{i}([1:bc_ind dat.dims(i)-bc_ind+1:dat.dims(i)],:) = bc;
-
                 end
             end
         end
@@ -270,7 +286,7 @@ classdef diffOp < linearOp
             end
             if all(dat.isUniform)
 
-                p_loc = 6; % must be even
+                p_loc = 4; % must be even
                 [Dmats_fd,c_fd] = obj.fdMats(dat,p_loc);
                 Dmats = cell(dat.ndims,1);
                 dat.getcorners;
@@ -324,6 +340,226 @@ classdef diffOp < linearOp
                     Dmats{i} = A \ B;
                 end
             end
+        end
+
+        function Dmats = lpMats(obj,dat,varargin)
+
+            p = inputParser;
+            addParameter(p,'poly_order',2*obj.w);
+            parse(p,varargin{:})
+
+            half_window = obj.w;
+            poly_order = p.Results.poly_order;
+
+            Dmats = cell(dat.ndims,1);
+            for i=1:dat.ndims
+                if obj.difftags(i)>0
+                    Dmats{i} = obj.build_sg_diff_matrix_uniform(...
+                        dat.dims(i), dat.dv(i), max(poly_order,obj.difftags(i)), obj.difftags(i), half_window, 'onesided');
+                else
+                    Dmats{i} = spdiags(ones(dat.dims(i),1), 0, dat.dims(i), dat.dims(i));
+                end
+            end
+        end
+
+        function D = build_sg_diff_matrix_uniform(obj, N, dt, poly_order, deriv_order, half_window, bc_type)
+            
+        %BUILD_SG_DIFF_MATRIX_UNIFORM  Build SG differentiation matrix on a uniform grid.
+        %
+        %   D = build_sg_diff_matrix_uniform(N, dt, poly_order, deriv_order, half_window, bc_type)
+        %
+        %   bc_type : 'antisym' or 'onesided'
+        
+            win_len = 2*half_window + 1;
+            if N < win_len
+                error('Time series too short for chosen window length.');
+            end
+        
+            % ---------------------------------------------------------------------
+            % 1. Compute the interior stencil weights in index-space (s = i)
+            % ---------------------------------------------------------------------
+            % Integer offsets: -half_window ... +half_window
+            k = (-half_window:half_window).';             % (win_len x 1)
+        
+            % Vandermonde-like matrix B (rows = points, cols = powers)
+            B = zeros(win_len, poly_order+1);             % (win_len x (poly_order+1))
+            for p = 0:poly_order
+                B(:, p+1) = k.^p;
+            end
+        
+            % Desired moments: for each monomial s^m, the r-th derivative at s=0.
+            % d^r/ds^r s^m |_{0} = 0 for m ~= r, and r! for m = r.
+            e = zeros(poly_order+1, 1);                   % (poly_order+1 x 1)
+            e(deriv_order+1) = factorial(deriv_order);
+        
+            % Solve B.' * w_s = e  (moment-matching system)
+            % B.' is (poly_order+1) x win_len, w_s is win_len x 1.
+            w_s = B.' \ e;                                % column (win_len x 1)
+        
+            % Convert to derivative wrt time: d/dt = (1/dt)^r d/ds^r
+            w_interior = w_s / (dt^deriv_order);          % column (win_len x 1)
+        
+            % ---------------------------------------------------------------------
+            % 2. Preallocate sparse triplets
+            % ---------------------------------------------------------------------
+            % Each row has at most win_len nonzeros; over-allocate a bit.
+            rows = zeros(N * win_len, 1);
+            cols = zeros(N * win_len, 1);
+            vals = zeros(N * win_len, 1);
+            idx  = 0;
+        
+            % Helper to add one row (no nested functions so this works in a plain .m file)
+            % We just inline the logic instead of a formal nested function.
+        
+            % ---------------------------------------------------------------------
+            % 3. Fill rows, depending on boundary condition type
+            % ---------------------------------------------------------------------
+            bc_type = lower(bc_type);
+        
+            switch bc_type
+                case 'onesided'
+                    % =============================================================
+                    % (a) ONE-SIDED LOCAL POLYNOMIAL FITS AT BOUNDARIES
+                    % =============================================================
+        
+                    % Left boundary: i = 1 .. half_window
+                    for i = 1:half_window
+                        idx_win = (1:(i + half_window)).';      % use as many points as available
+                        s      = idx_win - i;                   % local index coords (center at i)
+                        ni     = numel(idx_win);
+        
+                        Bi = zeros(ni, poly_order+1);
+                        for p = 0:poly_order
+                            Bi(:, p+1) = s.^p;
+                        end
+        
+                        ei = zeros(poly_order+1,1);
+                        ei(deriv_order+1) = factorial(deriv_order);
+        
+                        w_s_left = Bi.' \ ei;                   % (ni x 1)
+                        w_left   = w_s_left / (dt^deriv_order); % (ni x 1)
+        
+                        rows(idx+1:idx+ni) = i;
+                        cols(idx+1:idx+ni) = idx_win;
+                        vals(idx+1:idx+ni) = w_left;
+                        idx = idx + ni;
+                    end
+        
+                    % Interior: i = half_window+1 .. N-half_window (centered stencil)
+                    for i = (half_window+1):(N - half_window)
+                        idx_win = (i-half_window : i+half_window).';
+                        ni = win_len;
+        
+                        rows(idx+1:idx+ni) = i;
+                        cols(idx+1:idx+ni) = idx_win;
+                        vals(idx+1:idx+ni) = w_interior;
+                        idx = idx + ni;
+                    end
+        
+                    % Right boundary: i = N-half_window+1 .. N
+                    for i = (N - half_window + 1):N
+                        idx_win = ((i-half_window) : N).';
+                        s      = idx_win - i;
+                        ni     = numel(idx_win);
+        
+                        Bi = zeros(ni, poly_order+1);
+                        for p = 0:poly_order
+                            Bi(:, p+1) = s.^p;
+                        end
+        
+                        ei = zeros(poly_order+1,1);
+                        ei(deriv_order+1) = factorial(deriv_order);
+        
+                        w_s_right = Bi.' \ ei;                  % (ni x 1)
+                        w_right   = w_s_right / (dt^deriv_order);
+        
+                        rows(idx+1:idx+ni) = i;
+                        cols(idx+1:idx+ni) = idx_win;
+                        vals(idx+1:idx+ni) = w_right;
+                        idx = idx + ni;
+                    end
+        
+                case 'antisym'
+                    % =============================================================
+                    % (b) ANTISYMMETRIC EXTENSION AT BOUNDARIES
+                    %
+                    % We always use the centered stencil w_interior, but for indices
+                    % outside [1,N] we reflect with a minus sign:
+                    %   j < 1  -> j2 = 2 - j,   sign = -1
+                    %   j > N  -> j2 = 2*N - j, sign = -1
+                    % =============================================================
+        
+                    % Interior rows (centered stencil, no reflection needed)
+                    for i = (half_window+1):(N - half_window)
+                        idx_win = (i-half_window : i+half_window).';
+                        ni = win_len;
+        
+                        rows(idx+1:idx+ni) = i;
+                        cols(idx+1:idx+ni) = idx_win;
+                        vals(idx+1:idx+ni) = w_interior;
+                        idx = idx + ni;
+                    end
+        
+                    % Left boundary: i = 1 .. half_window
+                    for i = 1:half_window
+                        offsets = (-half_window:half_window).';
+                        j_all   = i + offsets;                   % may go below 1
+        
+                        for m = 1:win_len
+                            j = j_all(m);
+                            if j < 1
+                                j2   = 2 - j;
+                                sign = -1;
+                            elseif j > N
+                                j2   = 2*N - j;
+                                sign = -1;
+                            else
+                                j2   = j;
+                                sign = 1;
+                            end
+        
+                            idx = idx + 1;
+                            rows(idx) = i;
+                            cols(idx) = j2;
+                            vals(idx) = sign * w_interior(m);
+                        end
+                    end
+        
+                    % Right boundary: i = N-half_window+1 .. N
+                    for i = (N - half_window + 1):N
+                        offsets = (-half_window:half_window).';
+                        j_all   = i + offsets;                   % may go beyond N
+        
+                        for m = 1:win_len
+                            j = j_all(m);
+                            if j < 1
+                                j2   = 2 - j;
+                                sign = -1;
+                            elseif j > N
+                                j2   = 2*N - j;
+                                sign = -1;
+                            else
+                                j2   = j;
+                                sign = 1;
+                            end
+        
+                            idx = idx + 1;
+                            rows(idx) = i;
+                            cols(idx) = j2;
+                            vals(idx) = sign * w_interior(m);
+                        end
+                    end
+        
+                otherwise
+                    error('Unknown bc_type "%s". Use ''antisym'' or ''onesided''.', bc_type);
+            end
+        
+            % Trim and build sparse matrix
+            rows = rows(1:idx);
+            cols = cols(1:idx);
+            vals = vals(1:idx);
+        
+            D = sparse(rows, cols, vals, N, N);
         end
 
         function V = symconvmtx(obj,k,N)

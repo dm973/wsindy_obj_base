@@ -26,6 +26,7 @@ classdef testfcn < handle
         mtmax
         pre_conv
         Kmax
+        norml
     end
 
     methods
@@ -66,6 +67,7 @@ classdef testfcn < handle
             addParameter(p,'pre_conv',default_pre_conv);
             addParameter(p,'Kmax',default_Kmax);
             addParameter(p,'toggle_config',true);
+            addParameter(p,'norml',0);
             parse(p,dat,varargin{:})
 
             obj.phifuns = p.Results.phifuns;
@@ -95,6 +97,7 @@ classdef testfcn < handle
             end
             obj.pre_conv = p.Results.pre_conv;
             obj.Kmax= p.Results.Kmax;
+            obj.norml = repelem(p.Results.norml,1,obj.ndims);
 
             if isequal(class(obj.phifuns),'function_handle')
                 obj.phifuns = {obj.phifuns};
@@ -154,6 +157,8 @@ classdef testfcn < handle
                 vec = obj.op(term.evalterm(dat),Cfsinds);
             elseif isequal(class(term),'addterm')
                 vec = obj.test(dat,term.t1)+obj.test(dat,term.t2);
+            elseif isequal(class(term),'custom_term')
+                vec = term.evaltermfun(dat,obj);
             elseif isempty(term.linOp)
                 Cfsinds = zeros(obj.ndims,1);
                 obj = obj.add_difftags(Cfsinds);
@@ -227,7 +232,11 @@ classdef testfcn < handle
                     obj.subinds = repmat({obj.subinds},1,dat.ndims);
                 end
             end
-            obj.subinds = cellfun(@(s)s(1:min(end,obj.Kmax)),obj.subinds,'uni',0);
+            i=0;
+            while prod(cellfun(@(s)length(s),obj.subinds))> obj.Kmax
+                obj.subinds{i+1} = obj.subinds{i+1}(1:2:end);
+                i=mod(i+1,obj.ndims);
+            end
         end
     
         function obj = get_Cfsfft(obj)
@@ -243,13 +252,21 @@ classdef testfcn < handle
             for k=1:obj.ndims
                 if size(obj.Cfs{k},1)-1<Cfsinds(k)
                     Cfs_new = obj.phi_weights(k,size(obj.Cfs{k},1):Cfsinds(k));
+                    if size(obj.Cfs{k},1)==0
+                        if obj.norml(k)~=0
+                            obj.norml(k) = norm(Cfs_new(1,:),obj.norml(k));
+                        else
+                            obj.norml(k) = 1;
+                        end
+                    end
+                    Cfs_new = Cfs_new / obj.norml(k);
+
                     if ~isempty(obj.pre_conv)
                         obj.Cfs{k} = [obj.Cfs{k};arrayfunvec(Cfs_new,@(y)conv(obj.pre_conv(:)',y,'valid'),2)];
                     else
                         obj.Cfs{k} = [obj.Cfs{k};Cfs_new];
                     end
                 end
-%                 obj.Cfs{k} = obj.Cfs{k}/norm(obj.Cfs{k}(1,:),2);
             end
             obj = obj.get_Cfsfft;
         end
@@ -317,7 +334,6 @@ classdef testfcn < handle
             if obj.rads(k)>=1
                 Cfs = Cfs.*(obj.rads(k)*obj.dv(k)).^(-diffs(:))*obj.dv(k);
             end
-            % Cfs = Cfs/norm(Cfs(1,:),1);
         end
 
         function [phifun,m,p] = get_phi_handle(obj,k,N,phi_class,param)

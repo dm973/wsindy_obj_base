@@ -375,10 +375,9 @@ classdef wsindy_model < handle
             addParameter(IP, 'w', obj.weights);
             parse(IP, varargin{:});
             w = IP.Results.w;
-            obj.get_features;
+            obj.add_weights(w);
             w = obj.get_params('w',w);
-            % w = obj.get_params;
-            % w{:}
+            obj.get_features;
             str_c = cell(obj.numeq,1);
             for i=1:obj.numeq
                 str={};
@@ -388,15 +387,22 @@ classdef wsindy_model < handle
                 end
                 str_c{i}=str;
             end
-
         end
 
         % build covariance 
-        function obj = get_Lfac(obj,coarsen)
-            % disp(['getting covariance factors...'])
-            if ~exist('coarsen','var')
-                coarsen = 1;
+        function obj = get_Lfac(obj,varargin)
+
+            p = inputParser;
+            addParameter(p,'toggle_noisefree',false);
+            parse(p,varargin{:})
+            toggle_noisefree = p.Results.toggle_noisefree;
+            if toggle_noisefree
+                noisefreeargs = {'toggle_noisefree',toggle_noisefree};
+            else
+                noisefreeargs = {};
             end
+            
+            % disp(['getting covariance factors...'])
 
             if isempty(obj.L0)
                 obj.L0 = repmat({cell(obj.numeq,1)},obj.ntraj,1);
@@ -413,27 +419,18 @@ classdef wsindy_model < handle
             for j=1:obj.ntraj
                 for i=1:obj.numeq
                     if isempty(obj.L0{j}{i})
-                        grads = obj.lhsterms{i}.diffmat(obj.dat(j));
-                        grads = cell2mat(grads(:)');
-                        V = obj.tf{j}{i}.get_testmat(obj.lhsterms{i}.linOp);
-                        obj.L0{j}{i} = V*grads(:,1:obj.coarsen_L:end);
+                        obj.L0{j}{i} = obj.getLfacj(obj.dat(j),obj.lhsterms{i},obj.tf{j}{i},obj.coarsen_L,noisefreeargs);
                     end
                     if obj.toggleH
                         for k=1:length(obj.lib.terms)
                             if and(ismember(k,S{1}),isempty(obj.L1{j}{i}{k}))
-                                grads = obj.features{i}{ismember(S{1},k)}.diffmat(obj.dat(j));
-                                V = obj.tf{j}{i}.get_testmat(obj.features{i}{ismember(S{1},k)}.linOp);
-                                A = cell2mat(grads(:)');
-                                obj.L1{j}{i}{k} = V*A(:,1:obj.coarsen_L:end);
+                                obj.L1{j}{i}{k} = obj.getLfacj(obj.dat(j),obj.features{i}{ismember(S{1},k)},obj.tf{j}{i},obj.coarsen_L,noisefreeargs);
                             end
                         end
                     else
                         for k=1:length(obj.lib(i).terms)
                             if and(ismember(k,S{i}),isempty(obj.L1{j}{i}{k}))
-                                grads = obj.lib(i).terms{k}.diffmat(obj.dat(j));
-                                V = obj.tf{j}{i}.get_testmat(obj.lib(i).terms{k}.linOp);
-                                A = cell2mat(grads(:)');
-                                obj.L1{j}{i}{k} = V*A(:,1:obj.coarsen_L:end);
+                                obj.L1{j}{i}{k} = obj.getLfacj(obj.dat(j),obj.lib(i).terms{k},obj.tf{j}{i},obj.coarsen_L,noisefreeargs);
                             end
                         end
                     end
@@ -533,12 +530,11 @@ classdef wsindy_model < handle
             check = 0;
             while check == 0
                 try
-                    RT = obj.cov + (diag_reg/(1-diag_reg)*mean(diag(obj.cov)))*speye(size(obj.cov,1));
+                    RT = (1-diag_reg)*obj.cov + (diag_reg*mean(diag(obj.cov)))*speye(size(obj.cov,1));
                     RT = chol( RT )';
-                    RT = sqrt(1-diag_reg)*RT;
                     check = 1;
                 catch
-                    diag_reg = diag_reg*10;
+                    diag_reg = min(diag_reg*10,1);
                     fprintf('\nincreasing Cov regularization to %0.2e\n',diag_reg)
                 end
             end
@@ -598,13 +594,12 @@ classdef wsindy_model < handle
                     res = [];
                 end
             elseif isequal(meth,'sepcomp')
-                res = cell(obj.numeq,1);
+                res = cell(length(obj.b),1);
                 if ~isempty(obj.weights)
                     s = obj.get_supp;
                     p = obj.get_params;
-                    for j=1:obj.numeq
+                    for j=1:length(obj.b)
                         res{j} = (obj.b{j}-obj.G{j}(:,s{j})*p{j})/norm(obj.b{j});
-                        disp(norm(res{j}))
                     end
                 end
             end                
@@ -777,7 +772,7 @@ classdef wsindy_model < handle
         function [f,J,s,Fs] = get_functional_forms_vec(obj,varargin)
             IP = inputParser;
             addParameter(IP, 'ep', 1e-6);
-            addParameter(IP,'w',[]);
+            addParameter(IP, 'w', []);
             parse(IP,varargin{:})
             
             ep = IP.Results.ep; 
@@ -1008,6 +1003,21 @@ classdef wsindy_model < handle
             imagesc(A);
             colorbar
         end
+
+        function Lfac = getLfacj(obj,dat,tt,tf,coarsen_L,noisefreeargs)
+            if ~isequal(class(tt),'addterm')
+                A = tt.diffmat(dat,noisefreeargs{:});
+                A = cell2mat(A(:)');
+                V = tf.get_testmat(tt.linOp);
+                Lfac = V*A(:,1:coarsen_L:end);
+            else
+                Lt1 = getLfacj(obj,dat,tt.t1,tf,coarsen_L,noisefreeargs);
+                Lt2 = getLfacj(obj,dat,tt.t2,tf,coarsen_L,noisefreeargs);
+                Lfac = Lt1 + Lt2;
+            end
+        end                                    
+
+    
     end
 
 end

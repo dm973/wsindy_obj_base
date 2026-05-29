@@ -96,26 +96,51 @@ classdef wendy_model < wsindy_model
             obj.H = 1/4*(obj.H*(obj.get_H_R*obj.H'));
         end
 
-        function biasGs = get_biasG(obj)
+        function biasGs = get_biasG(obj,varargin)
+            p = inputParser;
+            addParameter(p,'exact_bias',true);
+            parse(p,varargin{:})
+            exact_bias = p.Results.exact_bias;
             if isempty(obj.biasG)
-                biasGs = obj.Gs;
-                S = obj.get_supp;
-                for i=1:obj.ntraj
-                    sigs = obj.dat(i).estimate_sigma;
-                    for j=1:obj.numeq
-                        biasGs{i}{j} = biasGs{i}{j}*0; 
-                        for k=1:length(obj.lib(j).terms)
-                            if ismember(k,S{j})
-                                lap = obj.lib(j).terms{k}.get_lap;
-                                G_ij_k = arrayfun(@(tt,ss) ss^2*obj.tf{i}{j}.test(obj.dat(i),tt), lap, cell2mat(sigs(:)'),'un',0);
-                                biasGs{i}{j}(:,k) = 0.5*sum(cell2mat(G_ij_k),2);
+                if or(~exact_bias,~obj.toggle_exact_bias)
+                    biasGs = obj.Gs;
+                    S = obj.get_supp;
+                    for i=1:obj.ntraj
+                        sigs = obj.dat(i).estimate_sigma;
+                        for j=1:obj.numeq
+                            biasGs{i}{j} = biasGs{i}{j}*0; 
+                            for k=1:length(obj.lib(j).terms)
+                                if ismember(k,S{j})
+                                    lap = obj.lib(j).terms{k}.get_lap;
+                                    G_ij_k = arrayfun(@(tt,ss) ss^2*obj.tf{i}{j}.test(obj.dat(i),tt), lap, cell2mat(sigs(:)'),'un',0);
+                                    biasGs{i}{j}(:,k) = 0.5*sum(cell2mat(G_ij_k),2);
+                                end
                             end
+                        end 
+                    end
+                    obj.biasG = cellfun(@(Gs) blkdiag(Gs{:}), biasGs,'uni',0);
+                    obj.biasG = cell2mat(obj.biasG);
+                else
+                    % disp('computing exact bias')
+                    for i=1:obj.ntraj
+                        s = obj.dat(i).estimate_sigma;
+                        lib_ext = arrayfun(@(j)library(),1:obj.numeq);
+                        Ainvs = cell(obj.numeq,1);
+                        supps = cell(obj.numeq,1);
+                        for eq=1:obj.numeq
+                            [~,Ainvs{eq},~,supps{eq},lib_ext(eq)] = getAinv(cell2mat(obj.lib(eq).tags'),s);
                         end
-                    end 
+                        Ainvs = cellfun(@(A) A-eye(size(A,1)), Ainvs,'un',0);
+                        Ainvs_r = cellfun(@(Ai,sup)Ai(:,sup),Ainvs,supps,'un',0);
+                        Ainv = blkdiag(Ainvs_r{:});
+                        WS_temp = wsindy_model(obj.dat(i),lib_ext,obj.tf{i},'lhsterms',obj.lhsterms,'catm','blkdiag');
+                        WS_temp.cat_Gb;
+                        obj.biasG = cat(1,obj.biasG,-WS_temp.G{1}*Ainv);
+                    end
                 end
-                obj.biasG = cellfun(@(Gs) blkdiag(Gs{:}), biasGs,'uni',0);
-                obj.biasG = cell2mat(obj.biasG);
+
             end
+
         end
 
         function obj = add_weights(obj,w,varargin)
@@ -157,24 +182,30 @@ classdef wendy_model < wsindy_model
                     obj.get_cov;
                 end
                 RT = obj.cov;
-                if obj.statcorrect(1)>1
-                    if obj.dat(1).estimate_sigma{1}>obj.statcorrect(1)-1
+                if obj.statcorrect(1)>=2
+                    if obj.dat(1).estimate_sigma{1}>obj.statcorrect(1)-2
                         obj.get_H;
                         RT = RT + obj.H;
                     end
+                elseif obj.statcorrect(1)>1                    
+                    % if obj.statcorrect(2)==1
+                    %     % RT = RT+spdiags((obj.biasG(:,sparse_inds)*obj.weights).^2,0,size(obj.biasG,1),size(obj.biasG,1));
+                    %     RT = RT + norm(obj.biasG*obj.weights)^2*speye(size(obj.biasG,1));
+                    %     % RT = (1+mean((obj.biasG(:,sparse_inds)*obj.weights).^2))*RT;
+                    % end
                 end
                 check = 0;
                 while check == 0
                     try
-                        RT = RT + (diag_reg/(1-diag_reg)*mean(diag(RT)))*speye(size(obj.cov,1));
+                        % RT = (1-diag_reg)*RT + diag_reg*mean(diag(RT))*speye(size(obj.cov,1)); % preserves the trace
+                        RT = (1-diag_reg)*RT + diag_reg*norm(full(RT))*speye(size(obj.cov,1)); % preserves the spectral radius
                         RT = chol( RT )';
-                        RT = sqrt(1-diag_reg)*RT;
                         check = 1;
                     catch
                         if diag_reg==0
                             diag_reg=10^-16;
                         else
-                            diag_reg = diag_reg*10;
+                            diag_reg = min(diag_reg*10,1);
                         end
                         fprintf('\nincreasing Cov regularization to %0.2e\n',diag_reg)
                     end
@@ -260,5 +291,14 @@ classdef wendy_model < wsindy_model
             obj.bias = -1/2*cell2mat(obj.bias(:));
         end
 
+        function bool = toggle_exact_bias(obj)
+            bool = false;
+            if all(arrayfun(@(L)all(cellfun(@(tt)isnumeric(tt),L.tags)),obj.lib))
+                if all(arrayfun(@(L)isreal(cell2mat(L.tags')),obj.lib))
+                    bool = true;
+                end
+            end
+        end
     end
 end
+
