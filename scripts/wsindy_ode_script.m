@@ -7,6 +7,8 @@
 % Check the file gen_ode_data for info on the parameters 
 % dependence and dimensionality of the respective ODE
 
+restart_run = true;
+
 %% add wsindy_obj_base to path
 
 fullPathToScript = mfilename('fullpath');
@@ -14,14 +16,20 @@ currentDir = fileparts(fullPathToScript);
 parentDir = fileparts(currentDir);
 addpath(genpath(parentDir))
 
-% close all; clear all;
+if ~restart_run
+    rng('shuffle')
+    clear all;
+    close all; 
+end
+
+set(0,'DefaultFigureWindowStyle','docked')
 
 %% load data
 
 ode_num = 'Lorenz';                   % select ODE from list below
 tol_ode = 1e-12;                      % set tolerance (abs and rel) of ode45
 
-tspan = [0:0.0005:10]; ode_params = {}; x0 = []; % ODE system parameters
+tspan = []; ode_params = {}; x0 = []; % ODE system parameters
 ode_names = {'Linear','Logistic_Growth','Van_der_Pol','Duffing',... %1-4
              'Lotka_Volterra','Lorenz','Rossler','rational',...     %5-8
              'Oregonator','Hindmarsh-Rose','Pendulum','custom'};    %9-12
@@ -36,8 +44,7 @@ max_timepoints = 1000;
 Uobj.coarsen(-max_timepoints);
 
 %%% add noise data
-noise_ratio = 0.2;
-rng('shuffle')
+noise_ratio = 0.1;
 rng_seed = rng().Seed; rng(rng_seed);
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
 
@@ -63,7 +70,7 @@ lib = library('tags',lib_tags);
 %% get test function
 
 %%% select test function family, radius selection method, spacing between tf
-tf_params = {'phifuns',optTFcos(1,2),'meth','FFT','param',1,'subinds',-4};
+tf_params = {'phifuns',optTFcos(2,0),'meth','FFT','param',1,'subinds',-4};
 
 tf = testfcn(Uobj,tf_params{:});
 
