@@ -3,7 +3,7 @@
 % below has associated defaults for 
 % - tspan: time domain (1d array)
 % - ode_params: ODE parameters (cell array)
-% - x0: initial conditions
+% - x0: initial conditions 
 % Check the file gen_ode_data for info on the parameters 
 % dependence and dimensionality of the respective ODE
 
