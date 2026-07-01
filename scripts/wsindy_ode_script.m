@@ -35,7 +35,7 @@ ode_names = {'Linear','Logistic_Growth','Van_der_Pol','Duffing',... %1-4
              'Oregonator','Hindmarsh-Rose','Pendulum','custom'};    %9-12
 [true_nz_weights,x,t,x0,ode_name,ode_params,rhs] = gen_ode_data(ode_num,ode_params,tspan,x0,tol_ode);
 
-%% get wsindy_data object
+%% define wsindy_data object
 
 Uobj = wsindy_data(x,t);
 
@@ -43,7 +43,7 @@ Uobj = wsindy_data(x,t);
 max_timepoints = 1000;
 Uobj.coarsen(-max_timepoints);
 
-%%% add noise data
+%%% add noise
 noise_ratio = 0.1;
 rng_seed = rng().Seed; rng(rng_seed);
 Uobj.addnoise(noise_ratio,'seed',rng_seed);
@@ -52,13 +52,13 @@ Uobj.addnoise(noise_ratio,'seed',rng_seed);
 figure(1)
 Uobj.plotDyn;
 
-%% select left-hand side
+%% define left-hand side
 
 lhs_diff_ord = 1;
 lhs_tags = get_tags(1,[],Uobj.nstates);
 lhs = arrayfun(@(i)term('ftag',lhs_tags(i,:),'linOp',lhs_diff_ord),(1:Uobj.nstates)','uni',0);
 
-%% get library
+%% define library
 
 %%% define polynomial and trig orders
 polys = 0:4;
@@ -67,23 +67,24 @@ trigs = [];
 lib_tags = get_tags(polys,trigs,Uobj.nstates);
 lib = library('tags',lib_tags);
 
-%% get test function
+%% define test function
 
 %%% select test function family, radius selection method, spacing between tf
 tf_params = {'phifuns',optTFcos(2,0),'meth','FFT','param',1,'subinds',-4};
 
 tf = testfcn(Uobj,tf_params{:});
 
-%% build WSINDy linear system
+%% define WSINDy model
 
 WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
 
-%% optimize
+%% optimize coefficients
 
+%%% optimization parameters
 lambdas = 10.^linspace(-4,0,200);
-toggle_jointthresh = 4;
+threshold_scheme = 4;
 
-MSTLS_params = {'lambda',lambdas,'toggle_jointthresh',toggle_jointthresh};
+MSTLS_params = {'lambda',lambdas,'toggle_jointthresh',threshold_scheme};
 [WS,loss_wsindy,its,G,b] = WS_opt().MSTLS(WS,MSTLS_params{:});
 
 %% Diagnose
@@ -130,6 +131,8 @@ if exist('true_nz_weights','var')
     fprintf('\nTPR=%1.2f',Tps)
     E2 = norm(w_true-WS.weights)/norm(w_true);
     fprintf('\nCoeff err=%1.2e',E2)
+else
+    fprintf('no model to compare to')
 end
 
 

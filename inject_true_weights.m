@@ -9,7 +9,11 @@ function w_true = inject_true_weights(WS,true_nz_weights)
             catch
                 dt = zeros(1,WS.ndims);
             end
-            ind = ismember(tags(:,1:end-1),[tt.ftag,dt],'rows');
+            ftag = tt.ftag;
+            if isempty(ftag)
+                ftag = nan(1,WS.nstates);
+            end
+            ind = ismember(tags(:,1:end-1),[ftag,dt],'rows');
             if any(ind)
                 w_true{i}(j) = tags(ind,end); 
             end

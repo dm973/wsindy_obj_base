@@ -1,7 +1,36 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% This script applies WSINDy to PDE data. Default variables loaded for each PDE
+% in pde_names are 
+% - U_exact: cell array of N (D+1)dim solution fields over (D+1)dim
+%           spacetime domain with convention of time along last axis
+% - xs: cell array of D+1 1D grids defining spacetime domain
+% - lhs: left-hand side operator given as a vector [p1 ... pn d1 ...
+%           d(D+1)] denoting the term prod_i(d/dx_i)^di prod_j(u_j^p_j)
+% - (optional) true_nz_weights: cell array of K matrices, each with rows corresponding
+%           to terms in the given equation, same convention as lhs, but
+%           with an extra column for the term coefficient
+%           *** this variable is not strictly necessary
+
+restart_run = true;
+
 %% add wsindy_obj_base to path
-% addpath(genpath('../'))
+
+fullPathToScript = mfilename('fullpath');
+currentDir = fileparts(fullPathToScript);
+parentDir = fileparts(currentDir);
+addpath(genpath(parentDir))
+
+if ~restart_run
+    rng('shuffle')
+    clear all;
+    close all; 
+end
+
+set(0,'DefaultFigureWindowStyle','docked')
 
 %% load data
+
+pde_num = 3; % set to 0 to run on pre-loaded dataset
 
 %%% choose PDE
 dr = 'pde_data/';
@@ -11,54 +40,67 @@ pde_names = {'burgers.mat',...
              'porous2.mat',...     
              'sod_exact.mat',...
     };
-
-pde_num = 0; % set to 0 to run on pre-loaded dataset
-
 if pde_num~=0
     pde_name = pde_names{pde_num};
-    load([dr,pde_name],'U_exact','lhs','true_nz_weights','xs')
+    load([dr,pde_name],'U_exact','xs','lhs','true_nz_weights')
 else
     pde_name = 'custom';
 end
 
-%% create data object
+%% define wsindy_data object
+
 Uobj = wsindy_data(U_exact,xs);
 
-%%% coarsen spacetime grid
+%%% Subsample data
 Uobj.coarsen(4);
 
 %%% add noise
-Uobj.addnoise(0.0);
+noise_ratio = 0.25;
+rng_seed = rng().Seed; rng(rng_seed);
+Uobj.addnoise(noise_ratio,'seed',rng_seed);
 
-%%% set library
-x_diffs = [0:4];%%% differential operators
-polys = [0:4]; trigs = [];%%% poly/trig functions
-custom_add =  {...  %%% custom terms using term algebra
-        term('fHandle',@(u,v) exp(sin(u+u.^2))),...                               % arbitrary term specified by function handle    
+%%% plot data
+figure(1)
+Uobj.plotDyn;
+
+%% define left-hand side
+
+lhsterms = lhs;
+
+%% define library
+
+x_diffs = [0:4];            %%% differential operators
+polys = [0:4]; trigs = [];  %%% poly/trig functions
+custom_add =  {...          %%% custom terms using term algebra
+        term('fHandle',@(u,v) exp(sin(u+u.^2))),...                                  % arbitrary term specified by function handle    
         % compterm(term('ftag',2), diffOp([1,0],'stateind',2)),...                   % term nonlinear in a derivative
         % prodterm(term('ftag',[-2i 2i]), diffOp([2,0],'stateind',1, 'nstates', 2)),...                 % product of two terms
         % addterm(diffOp([3,0],'stateind',1, 'nstates', 2), term('fHandle',@(u,v) tanh(u+v))),...              % sum of two terms
     };
 
 custom_remove_f = {}; %{@(tag) all(tag(Uobj.nstates+1:Uobj.nstates+Uobj.ndims-1))};  % remove all cross derivatives
-custom_remove_t = {}; %[1 0 0 1 0 0; 0 1 0 0 1 0];                              % remove tags for divergence terms
+custom_remove_t = {}; %[1 0 0 1 0 0; 0 1 0 0 1 0];                                   % remove tags for divergence terms
 
-lib = get_lib(Uobj,polys,trigs,x_diffs,custom_add,custom_remove_f,custom_remove_t);
+lib = get_lib_pde(Uobj,polys,trigs,x_diffs,custom_add,custom_remove_f,custom_remove_t);
 
-%%% set testfcn 
+%% define testfcn 
+
 phifun = 'pp';
 tau = 10^-10; tauhat = 1;
 tf_param = {[tau tauhat max(x_diffs)]};
 tf_args = {'phifuns',phifun,'meth','FFT','param',tf_param,'subinds',-3};
 tf = testfcn(Uobj,tf_args{:});
 
-%%% scale data
-% Uobj.set_scales([],'lib',lib,'tf',tf);
+%% scale data, redefine testfunction
+
+Uobj.set_scales([],'lib',lib,'tf',tf);
 tf = testfcn(Uobj,tf_args{:});
+
+%% define WSINDy model
 
 WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
 
-%% solve for coefficients
+%% optimize coefficients
 
 %%% get coefficient scale vector
 Mscale = arrayfun(@(L)L.get_scales(Uobj.scales),WS.lib(:),'un',0);
@@ -69,6 +111,7 @@ Mscale_W = cell2mat(Mscale);
 %%% optimization parameters
 lambdas = 10.^linspace(-4,0,25);
 threshold_scheme = 1;
+
 [WS,loss_wsindy,its,G,b] = WS_opt().MSTLS_0(WS,'lambdas',lambdas,'M_diag',Mscale,'toggle_jointthresh',threshold_scheme,'alpha',[]);
 
 %%% non-dimensionalized coefficients
@@ -90,18 +133,14 @@ for j=1:WS.numeq
 end
 cellfun(@(G)fprintf('cond(g)=%1.2e \n',cond(G)),WS.G)
 
-try
-    w_true = WS.reshape_w; w_true = cellfun(@(w)w*0,w_true,'un',0);
-    for i=1:WS.numeq
-        tags = WS.lib(i).tags(:);
-        ii = ~cellfun(@(tt) isnumeric(tt),tags);
-        tags(ii) = repmat({zeros(1,Uobj.nstates+Uobj.ndims)},length(find(ii)),1);
-        w_true{i}(ismember(cell2mat(tags),true_nz_weights{i}(:,1:end-1),'rows')) = ...
-            true_nz_weights{i}(:,end);
-    end
-    cellfun(@(w,v)fprintf('coeff err=%1.2e\n',norm(w-v)/norm(v)),w_true,WS.reshape_w)
-    cellfun(@(w,v)fprintf('supp rec=%i\n',isequal(find(w),find(v))),w_true,WS.reshape_w)
-catch
+if exist('true_nz_weights','var')
+    w_true = inject_true_weights(WS,true_nz_weights);
+    Tps = tpscore(WS.weights,w_true);
+    fprintf('\nTPR=%1.2f',Tps)
+    E2 = norm(w_true-WS.weights)/norm(w_true);
+    fprintf('\nCoeff err=%1.2e',E2)
+    fprintf('\nsupp rec=%i\n',isequal(find(w_true),find(WS.weights)))
+else
     fprintf('no model to compare to')
 end
 
@@ -133,28 +172,4 @@ for j=1:WS.numeq
     plot([WS.bs{1}{j} WS.Gs{1}{j}*W_nd{j}])
     legend('b','G*w')
     title(['||G*w-b||/||b||=',num2str(norm(WS.Gs{1}{j}*W_nd{j}-WS.bs{1}{j})/norm(WS.bs{1}{j}))])
-end
-
-%% functions
-
-function lib = get_lib(Uobj,polys,trigs,x_diffs,custom_add,custom_remove_f,custom_remove_t)    
-    nstates = Uobj.nstates;
-    ndims = Uobj.ndims;
-    
-    tags = get_tags(polys,trigs,nstates);
-    lib = library('nstates',nstates);
-    
-    diff_tags = get_tags(x_diffs,[],ndims);
-    diff_tags = diff_tags(diff_tags(:,end)==0,:);
-    for j=1:size(tags,1)
-        for i=1:size(diff_tags,1)
-            if all([~and(sum(diff_tags(i,:))>0,...
-                    isequal(tags(j,:),zeros(1,nstates))),...
-                    ~cellfun(@(b)b([tags(j,:) diff_tags(i,:)]),custom_remove_f),...
-                    ~ismember_rows([tags(j,:) diff_tags(i,:)],custom_remove_t)])
-                lib.add_terms(term('ftag',tags(j,:),'linOp',diff_tags(i,:)));
-            end
-        end
-    end
-    lib.add_terms(custom_add);
 end

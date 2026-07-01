@@ -1,13 +1,14 @@
+%%%% this library takes the tensor product of a tig library and a
+%%%% polynomial library 
+
 function [lib,true_S] = trig_poly_lib(polys,trigs,x_diffs,nstates,ndims,numeq,true_nz_weights)
     tags_poly = get_tags(polys,[],nstates);
-    % tags_1 = tags_1(tags_1(:,3)>0,:);
     tags_trig = get_tags([],trigs,nstates);
     tags = prodtags(tags_poly,tags_trig);
     lib = library('nstates',nstates);
     
     diff_tags = get_tags(x_diffs,[],ndims);
     diff_tags = diff_tags(diff_tags(:,end)==0,:);
-    % diff_tags = diff_tags(sum(diff_tags>0,2)<=1,:);
     true_S = cell(numeq,1);
     for i=1:size(diff_tags,1)
         for j=1:length(tags)
