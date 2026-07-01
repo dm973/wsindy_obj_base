@@ -243,6 +243,24 @@ classdef wsindy_data < handle
                 end
                 hold off
                 legend
+            elseif obj.ndims==2
+                for m=1:obj.dims(end)
+                    for n=1:obj.nstates
+                        subplot(1,obj.nstates,n)
+                        plot(obj.grid{1},obj.Uobs{n}(:,m),'markersize',5,'linewidth',2)
+                    end
+                    drawnow
+                    sgtitle(sprintf('time=%g, t_ind=%i',obj.grid{end}(m),m))
+                end
+            elseif obj.ndims==3
+                for m=1:obj.dims(end)
+                    for n=1:obj.nstates
+                        subplot(1,obj.nstates,n)
+                        imagesc(obj.grid{1},obj.grid{2},obj.Uobs{n}(:,:,m))
+                    end
+                    drawnow
+                    sgtitle(sprintf('time=%g, t_ind=%i',obj.grid{end}(m),m))
+                end
             end
 
         end
@@ -466,10 +484,10 @@ classdef wsindy_data < handle
             lib = p.Results.lib;
             tf = p.Results.tf;
 
+            scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
             if isequal(length(scl),obj.nstates+obj.ndims)
                 scales = scl;
-            else
-                scales = [ones(1,obj.nstates) ones(1,obj.ndims)];
+            elseif ~isequal(scl,1)
                 try            
                     if isequal(class(tf),'testfcn')
                         tf = {tf};

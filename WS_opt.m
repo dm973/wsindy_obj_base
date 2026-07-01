@@ -22,43 +22,61 @@ classdef WS_opt < handle
         end
 
         function WS = ols(obj,WS,varargin)
+            %%% solves the ordinary least-squares problem with linear constraints:
+            %%% min_w  ||G*w-b||^2 s.t. A*w <= a, C*w = c, supp(w) = S;  A,a,C,c specified in linregargs
+            %%% S: cell array of vectors defining the sparsity pattern for each equation
+            %%% linregargs: cell array of cell arrays, each containing key-value pairs for linear regression arguments in the given equation
+            %%% **for each, the number of equations is 1 if the concatenation style is 'blkdiag', 
+            %%% **regardless of if n>1 equations define the model
+
             WS.cat_Gb;
+
             p = inputParser;
-            addParameter(p,'S',[]);
-            addParameter(p,'linregargs',{});
+            addParameter(p,'S',[]); % numeq x 1 cell array containing boolean vector indicating model support over library terms
+            addParameter(p,'linregargs',[]);
             parse(p,varargin{:})
-            S = p.Results.S;
+
+            % linear regression arguments
             linregargs = p.Results.linregargs;
-            ii = cellfun(@(a)isequal(a,'S'),linregargs);
-            if any(ii)
-                S = linregargs{find(ii)+1};
+            if isempty(linregargs)
+                linregargs = cellfun(@(g) {}, WS.G, 'un', 0);
             end
+
+            % sparsity patterns
+            S = p.Results.S;
             if isempty(S)
-                S = cellfun(@(g)true(size(g,2),1),WS.G,'uni',0);
-            elseif and(isequal(S,0),~isempty(WS.weights))
+               S = cellfun(@(g)true(size(g,2),1),WS.G,'uni',0);
+            end
+
+            % if sparsity pattern exists as a linear regression argument, override 'S'
+            for n=1:length(WS.G)
+                ii = cellfun(@(a)isequal(a,'S'),linregargs{n});
+                if any(ii)
+                    S{n} = linregargs{n}{find(ii)+1};
+                end
+            end            
+
+            % if S=0, try to set sparsity according to existing model weights
+            if and(isequal(S,0),~isempty(WS.weights))
                 if isequal(WS.catm,'blkdiag')
                     S = {WS.weights~=0};    
                 else
                     S = cellfun(@(w)w~=0,WS.reshape_w,'uni',0);
                 end
             end
+
+            % if bias is present, incorporate into linear regression 
             G = WS.G;
             if isprop(WS,'biasG')
-                if isequal(WS.catm,'blkdiag')
-                    if WS.statcorrect(2)==1
-                        WS.add_weights(ones(sum(cellfun(@(G)size(G,2),G)),1));
-                        WS.get_biasG;
-                        G{1} = G{1}-WS.biasG;
-                    end
+                if WS.statcorrect(2)==1
+                    WS.add_weights(ones(sum(cellfun(@(G)size(G,2),G)),1));
+                    WS.get_biasG('S',S);
+                    G = cellfun(@(g,bias) g-bias, G, WS.biasG, 'un',0);
                 end
             end
-            w = cell2mat(cellfun(@(g,b,s)obj.linreg(g(:,s),b,linregargs{:},'S',s), G, WS.b, S, 'uni',0));
-            WS.add_weights(w,'toggle_cov',0);
-        end
 
-        function y = inject_sparse(obj,w,S)
-            y = S*0;
-            y(S) = w;
+            w = cell2mat(cellfun(@(g,b,s,lra)obj.linreg(g(:,s),b,lra{:},'S',s), G, WS.b, S, linregargs, 'uni',0));
+            WS.add_weights(w,'toggle_cov',0);
         end
 
         function WS = ols_tf(obj,WS,varargin)
@@ -128,11 +146,11 @@ classdef WS_opt < handle
             addRequired(p,'WS');
             addParameter(p,'lambdas',[]);
             addParameter(p,'maxits',inf);
-            addParameter(p,'alpha',0.01);
+            addParameter(p,'alpha',[]);
             addParameter(p,'gamma',0);
             addParameter(p,'M_diag',default_M_diag);
-            addParameter(p,'toggle_jointthresh',1);
-            addParameter(p,'linregargs',repmat({{'verbose','none'}},WS.numeq,1));
+            addParameter(p,'toggle_jointthresh',2);
+            addParameter(p,'linregargs',{});
             addParameter(p,'incl_inds',cell(WS.numeq,1));
             addParameter(p,'coltrim',0);
             addParameter(p,'subset_eq',1:length(G));
@@ -153,8 +171,17 @@ classdef WS_opt < handle
                 M_diag = default_M_diag;
             end
             toggle_jointthresh = p.Results.toggle_jointthresh;
+
             linregargs = p.Results.linregargs;
+            if isempty(linregargs)
+                if isequal(WS.catm, 'component')
+                    linregargs  = repmat({{'verbose','none'}},WS.numeq,1);
+                elseif isequal(WS.catm, 'blkdiag')
+                    linregargs  = {{}};
+                end
+            end
             incl_inds = p.Results.incl_inds;
+            
             toggle_coltrim = p.Results.coltrim;
             toggle_discrep = p.Results.toggle_discrep;
             subset_eq = p.Results.subset_eq;
@@ -222,7 +249,8 @@ classdef WS_opt < handle
                 lossvals = proj_cost + overfit_cost;
                 W{k} = W_all(:,find(lossvals == min(lossvals),1));
                 loss_wsindy(k,:) = lossvals;
-                weight_inds = sum(cellfun(@(G)size(G,2),WS.Gs{1}(1:k-1)))+1:sum(cellfun(@(G)size(G,2),WS.Gs{1}(1:k)));
+                weight_inds = sum(cellfun(@(G)size(G,2),WS.G(1:k-1)))+1:sum(cellfun(@(G)size(G,2),WS.G(1:k)));
+                % weight_inds = sum(cellfun(@(G)size(G,2),WS.Gs{1}(1:k-1)))+1:sum(cellfun(@(G)size(G,2),WS.Gs{1}(1:k)));
 
                 if and(toggle_discrep==1,any(WS.weights(weight_inds)))
                     wtemp = WS.weights(weight_inds);
@@ -367,6 +395,7 @@ classdef WS_opt < handle
             loss_wsindy(end,:) = lambdas;
         end
 
+        % the following implementation of MSTLS got a little bloated, use MSTLS_0 instead
         function [WS,loss_wsindy,its,G,b,r_inds] = MSTLS(obj,WS,varargin)
             if isempty(WS.G)
                 WS.cat_Gb;
@@ -599,129 +628,6 @@ classdef WS_opt < handle
             W = cellfun(@(w)reshape(w,size(P,2),[])',W,'uni',0);
         end
 
-        function x = linreg(obj,A,b,varargin)
-            p = inputParser;
-            addRequired(p,'A');
-            addRequired(p,'b');
-            addParameter(p,'S',true(size(A,2),1));
-            addParameter(p,'C',speye(size(A,2)));
-            addParameter(p,'Cinv',[]);
-            addParameter(p,'x0',[]);
-            addParameter(p,'Aineq',[]);
-            addParameter(p,'bineq',[]);
-            addParameter(p,'Aeq',[]);
-            addParameter(p,'beq',[]);
-            addParameter(p,'LB',[]);
-            addParameter(p,'UB',[]);
-            addParameter(p,'consttol',10^-10);
-            addParameter(p,'opttol',10^-10);
-            addParameter(p,'maxits',1000);
-            addParameter(p,'verbose','none');
-            parse(p,A,b,varargin{:})
-
-            x0 = p.Results.x0;
-
-            % x0
-
-            Aineq = p.Results.Aineq;
-            bineq = p.Results.bineq;
-            if isempty(Aineq)
-                Aineq = [];
-                bineq = [];
-            end
-            Aeq = p.Results.Aeq;
-            beq = p.Results.beq;
-            if isempty(Aeq)
-                Aeq = [];
-                beq = [];
-            end
-            LB = p.Results.LB;
-            UB = p.Results.UB;
-            consttol = p.Results.consttol;
-            opttol = p.Results.opttol;
-            maxits = p.Results.maxits;
-            S = p.Results.S;
-            C = p.Results.C;
-            Cinv = p.Results.Cinv;
-            verbosity = p.Results.verbose;
-
-            if any(S)
-                if size(A,2)~=length(find(S))
-                    A = A(:,S);
-                    C = C(S,:);
-                end
-                A = A*C;
-                if isempty(Cinv)
-                    Cinv = pinv(full(C));
-                end
-
-                if isempty(x0)
-                    if diff(size(A))>=0
-
-                        % reg0 = rank(A,norm(A)*10^-4);
-                        % reg_inds = abs(b'*A)./vecnorm(A)/norm(b);
-                        % [~,reg_inds] = sort(reg_inds,'descend');
-                        % reg_inds = reg_inds(1:min(reg0,end));
-                        % x0 = zeros(size(A,2),1);
-                        % x0(reg_inds) = A(:,reg_inds) \ b;
-                        % x0 = obj.inject_sparse(x0,S);
-
-                        x0 = obj.inject_sparse(C*lsqminnorm(A,b),S);
-                    else
-                        x0 = obj.inject_sparse(C*(A\b),S);
-                    end
-                end
-    
-                if any([~isempty(Aineq) ~isempty(bineq) ~isempty(Aeq) ~isempty(beq) ~isempty(LB) ~isempty(UB)])
-                    colnorms = vecnorm(A);
-                    A = A./colnorms;
-                    if ~isempty(Aineq)
-                        Aineq = Aineq(:,S)*C;
-                        Aineq = Aineq./colnorms;
-                    end
-                    if ~isempty(Aeq)
-                        Aeq = Aeq(:,S)*C;
-                        Aeq = Aeq./colnorms;
-                    end
-                    if ~isempty(LB)
-                        LB = LB(S)*C;
-                        LB = LB.*colnorms(:);
-                    end
-                    if ~isempty(UB)
-                        UB = UB(S)*C;
-                        UB = UB.*colnorms(:);
-                    end
-                    % if isequal(verbosity,'None')
-                    %     N1 = null(Aeq);
-                    %     try
-                    %         N = null((Aineq*N1)');
-                    %         e = max(abs(bineq'*N));
-                    %         if e > 0
-                    %             disp(['NO FEASIBLE BOUNDARY POINT: e=',num2str(e)])
-                    %         end
-                    %     end
-                    % end
-                    options = optimoptions('quadprog','Display',verbosity,'ConstraintTolerance',consttol,'OptimalityTolerance',opttol,'MaxIterations',maxits);
-                    if ~isempty(x0)
-                        %%% project least squares onto feasible set
-                        x0 = Cinv*x0(S).*colnorms(:);
-                        x0 = quadprog(eye(length(x0)),-x0,Aineq,bineq,Aeq,beq,LB,UB,[],options);
-                    end
-                    x = quadprog((A'*A),-(A'*b),Aineq,bineq,Aeq,beq,LB,UB,x0,options);
-                    x = x./colnorms(:);
-                    if isempty(x)
-                        x = zeros(size(A,2),1);
-                    end
-                    x = obj.inject_sparse(C*x,S);
-                else
-                    x = x0;
-                end
-            else
-                x = S*0;
-            end
-
-        end
-
         function [WS,w_its,res,res_0,CovW,RT] = wendy(obj,WS,varargin)
             % options: maxits,ittol,diag_reg,w,regmeth
 
@@ -775,29 +681,38 @@ classdef WS_opt < handle
                 WS.trim_rows('trim_factor',tr);
             end
             
-            check = 1;
             if isempty(sparse_inds)
                 sparse_inds = WS.weights~=0;
             end
 
             w_its = WS.weights;
-            its = 0;
             WS.cat_Gb('cat','blkdiag');
+            WS.dat.estimate_sigma;
+
+            if isempty(linregargs)
+                linregargs = cellfun(@(g) {}, WS.G, 'un', 0);
+            end
+
+            if length(linregargs) == WS.numeq
+                linregargs  = obj.lra_to_blkdiag(linregargs);
+            end
+
             G_0 = WS.G{1};
             b_0 = WS.b{1};
-            WS.dat.estimate_sigma;
             G = G_0/mean(sqrt(cell2mat(WS.dat.sigmas)));
             b = b_0/mean(sqrt(cell2mat(WS.dat.sigmas)));
             res_0 = G_0*w_its-b_0;
             res = res_0;
 
+            check = 1;
+            its = 0;
             while and(check,its<maxits)
                 if isequal(verbosity,'iter')
                     t_before=toc(tstart);
                 end
                 if isequal(regmeth,'ols')
                     [G,b,RT] = WS.apply_cov(G_0(:,sparse_inds),b_0,obj.diag_reg,sparse_inds);
-                    w = obj.linreg(G,b,linregargs{:},'S',sparse_inds);
+                    w = obj.linreg(G,b,linregargs{1}{:},'S',sparse_inds);
                     WS.add_weights(w,'toggle_cov',1);
                 elseif isequal(regmeth,'MSTLS')
                     [WS,~,~,G,b] = obj.MSTLS(WS,'applycov',1);
@@ -855,11 +770,13 @@ classdef WS_opt < handle
             end
             
             if ~isequal(verbosity,0)
-                fprintf('\nwendy iter time=%3.5f; sparsity=%i; its=%i',toc,length(find(WS.weights)),its)
+                fprintf('\nwendy iter time=%3.5f; sparsity=%i; its=%i\n',toc(tstart),length(find(WS.weights)),its)
             end
         end
 
         function [WS,w_its,res,res_0,CovW,RT] = wendy2(obj,WS,varargin)
+            % wendy2 attempts to solve the full MLE using a cheap quasi-Newton iteration
+            % remains in development state
             % options: maxits,ittol,diag_reg,w,regmeth
 
             default_maxits = 20;
@@ -961,13 +878,14 @@ classdef WS_opt < handle
             default_diag_reg = 10^-6;
 
             p = inputParser;
+
             %%%% MSTLS params
             addParameter(p,'lambdas',default_lambdas);
             addParameter(p,'maxits',default_maxits);
             addParameter(p,'alpha',default_alpha);
             addParameter(p,'M_diag',ones(sum(arrayfun(@(L)length(L.terms),WS.lib)),1));
 
-            %%%% MSTLS params
+            %%%% additional thresholding step based on covariance
             addParameter(p,'cov_thresh',0);
 
             %%%% wendy params
@@ -1035,429 +953,227 @@ classdef WS_opt < handle
             loss_wsindy(end,:) = lambdas;
         end
 
-        function [WS,loss_wsindy,its] = MSTLSQP(obj,WS,varargin)
-            if isempty(WS.G)
-                WS.cat_Gb;
-            end
-            G = WS.G; 
-            b = WS.b;
+        %%% MSTLSQP - modified sequential threshold quadratic program, legacy: now specify constraints by passing linregargs to MSTLS, wendy, etc
 
-            if WS.toggleH
-                default_M_diag = {ones(length(WS.lib.terms),1)};
-            else
-                default_M_diag = cellfun(@(G) ones(size(G,2),1),G,'uni',0);
-            end
-
-            default_lambdas = 10.^linspace(-4,0,100);
-            default_maxits = inf;
-            default_alpha = 0.01;
-            default_gamma = 0;
-
-            defaultexcl_inds=repmat({[]},1,WS.numeq);
-            defaultAineq=repmat({[]},1,WS.numeq);
-            defaultbineq=repmat({[]},1,WS.numeq);
-            defaultopt_tol = min(cellfun(@(G)1/cond(G'*G),WS.G));
-            defaultconst_tol = defaultopt_tol;
-            defaultmaxQPits = 1000;
-            defaultdispQP='off';
-            defaultauto = [];
-            
-            inp = inputParser;
-            addRequired(inp,'WS');
-            addParameter(inp,'lambdas',default_lambdas);
-            addParameter(inp,'maxits',default_maxits);
-            addParameter(inp,'alpha',default_alpha);
-            addParameter(inp,'gamma',default_gamma);
-            addParameter(inp,'M_diag',default_M_diag);
-
-            addParameter(inp,'excl_inds',defaultexcl_inds);
-            addParameter(inp,'Aineq',defaultAineq);
-            addParameter(inp,'bineq',defaultbineq);
-            addParameter(inp,'opt_tol',defaultopt_tol);
-            addParameter(inp,'const_tol',defaultconst_tol);
-            addParameter(inp,'maxQPits',defaultmaxQPits);
-            addParameter(inp,'dispQP',defaultdispQP);
-            addParameter(inp,'auto',defaultauto);
-            
-            parse(inp,WS,varargin{:});  
-            
-            lambdas = inp.Results.lambdas;
-            maxits = inp.Results.maxits;
-            alpha = (inp.Results.alpha*mean(arrayfun(@(L)length(L.terms),WS.lib))+1)^-1;
-            gamma = inp.Results.gamma;
-            M_diag = inp.Results.M_diag;
-
-            excl_inds = inp.Results.excl_inds;
-            Aineq = inp.Results.Aineq;
-            bineq = inp.Results.bineq;
-            opt_tol = inp.Results.opt_tol;
-            const_tol = inp.Results.const_tol;
-            maxQPits = inp.Results.maxQPits;
-            dispQP = inp.Results.dispQP;
-            auto = inp.Results.auto;
-
-            if isequal(auto,'weakLyap')
-                Aineq = cell(3,1);
-                bineq = cell(3,1);
-                E = eye(3);
-                for j=1:WS.numeq
-                    tt = term('ftag',E(j,:),'linOp',1);
-                    v = WS.tf{1}{j}.test(WS.dat,tt);
-                    Aineq{j} = v(:).*WS.G{j};
-                    bineq{j} = zeros(size(Aineq{j},1),1);
-                end
-            end
-
-            wtemp = cell(WS.numeq,1);
-            its = zeros(WS.numeq,1);
-            loss_wsindy = zeros(WS.numeq+1,length(lambdas));
-            for i=1:WS.numeq
-                [wtemp{i},resid,its(i),lossvals,thrs_EL] = obj.wsindy_pde_RGLS_seq_qp(lambdas,gamma,G{i},b{i},M_diag{i},maxits,alpha,Aineq(i),bineq(i),excl_inds(i),opt_tol,const_tol,maxQPits,dispQP);
-                loss_wsindy(i,:) = lossvals(1,:);
-            end
-            loss_wsindy(end,:) = lambdas;
-            WS.weights = cell2mat(wtemp);
-        end
-
-        function [w,its,thrs_EL] = sparsifyDynamics(obj,G,b,lambda,gamma,M,maxits,toggle_jointthresh,linregargs,incl_inds)
-
-            [~,nn] =size(G);
-            n = size(b,2);
-            if isempty(M)
-                M = ones(nn,1);
-            end
-            if isequal(incl_inds,'all')
-                incl_inds = 1:nn;
-            end
-            if  gamma ~= 0
-                G = [G;gamma*eye(nn)];
-                b = [b;zeros(nn,n)];
-            end
-            
-            w = M.*obj.linreg(G,b,linregargs{:});
-            if toggle_jointthresh == 1
-                % threshold based on JCP paper
-                bnds = norm(b)./vecnorm(G)'.*M;
-                LBs = lambda*max(1,bnds);
-                UBs = 1/lambda*min(1,bnds);
-            elseif toggle_jointthresh == 2
-                % threshold only on term magnitude
-                bnds = norm(b)./vecnorm(G)'.*M;
-                LBs = lambda*bnds;
-                UBs = 1/lambda*bnds;
-            elseif toggle_jointthresh == 3
-                % threshold based on JCP but with term projection
-                bnds = norm(b)^2./abs(b'*G)'.*M;
-                bnds2 = norm(b)./vecnorm(G)'.*M;
-                UBs = 1/lambda*bnds2; % upper bound by term magnitude
-                LBs = lambda*bnds; % lower bound by projection
-            elseif toggle_jointthresh == 4
-                % threshold only on term projection
-                bnds = norm(b)^2./abs(b'*G)'.*M;
-                LBs = lambda*bnds;
-                UBs = 1/lambda*bnds;
-            else
-                % threshold only Hamiltonian coarse-graining - should be
-                % robust to small coefficients
-                bnds = norm(b)./vecnorm(G)'.*M;
-                w0 = abs(b'*G);
-                nrms = vecnorm(G);
-                alpha = max(w0./nrms.^2.*M');
-                beta = max(w0./nrms/norm(b));
-                LBs = lambda*max(alpha,bnds*beta); 
-                UBs = 1/lambda*min(alpha,bnds*beta);
-            end
-            thrs_EL = [LBs bnds UBs];
-            
-            smallinds = 0*w;
-            for j=1:min(nn,maxits)
-                smallinds_new = or(abs(w)<LBs,abs(w)>UBs);
-                smallinds_new(incl_inds) = 0;
-                if all(smallinds_new(:)==smallinds(:))
-                    its = j;
-                    return
-                else
-                    smallinds = smallinds_new;
-                    w(smallinds)=0;    
-                    for ind=1:n
-                        w(:,ind) = M.*obj.linreg(G(:,~smallinds),b(:,ind),linregargs{:},'S',~smallinds);
-                    end
-                end
-            end
-            its = j;
-        end
-
-        function [ws,its,thrs_ELs] = sparsifyGroupDynamics(obj,Gs,bs,lambda,gamma,Ms,maxits,toggle_jointthresh,linregargss,incl_inds,toggle_sign)
-            %%% designed for single RHS vector only
-
-            gs_norm = 1;
-
-            ws = [];
-            UBss = [];
-            LBss = []; 
-            for p = 1:length(Gs)
-                G = Gs{p};
-                b = bs{p};
-                M = Ms{p};
-                if ~isempty(linregargss)
-                    linregargs = linregargss{p};
-                else    
-                    linregargs  = {};
-                end
-                [~,nn] =size(G);
-                if isempty(M)
-                    M = ones(nn,1);
-                end
-                if isequal(incl_inds,'all')
-                    incl_inds = 1:nn;
-                end
-                if  gamma ~= 0
-                    G = [G;gamma*eye(nn)];
-                    b = [b;zeros(nn,1)];
-                end
-                
-                w = M.*obj.linreg(G,b,linregargs{:});
-                if toggle_jointthresh == 1
-                    % threshold based on JCP paper
-                    bnds = norm(b)./vecnorm(G)'.*M;
-                    LBs = lambda*max(1,bnds);
-                    UBs = 1/lambda*min(1,bnds);
-                elseif toggle_jointthresh == 2
-                    % threshold only on term magnitude
-                    bnds = norm(b)./vecnorm(G)'.*M;
-                    LBs = lambda*bnds;
-                    UBs = 1/lambda*bnds;
-                elseif toggle_jointthresh == 3
-                    % threshold based on JCP but with term projection
-                    bnds = norm(b)^2./abs(b'*G)'.*M;
-                    bnds2 = norm(b)./vecnorm(G)'.*M;
-                    UBs = 1/lambda*bnds2; % upper bound by term magnitude
-                    LBs = lambda*bnds; % lower bound by projection
-                elseif toggle_jointthresh == 4
-                    % threshold only on term projection
-                    bnds = norm(b)^2./abs(b'*G)'.*M;
-                    LBs = lambda*bnds;
-                    UBs = 1/lambda*bnds;
-                end
-                ws = [ws w];
-                Gs{p} = G;
-                bs{p} = b;
-                UBss = [UBss UBs];
-                LBss = [LBss LBs];
-            end
-
-            UBs = vecnorm(UBss,gs_norm,2);
-            LBs = vecnorm(LBss,gs_norm,2);
-            thrs_ELs = [UBs LBs];
-
-            w_comb = zeros(size(ws,1),1);
-            smallinds = 0*w_comb ;
-            for j=1:min(nn,maxits)
-
-                %%% combine coeffs
-                w_comb = vecnorm(ws,gs_norm,2);
-                w_sign = abs(std(sign(ws),[],2));
-
-                %%% threshold based on combined coeffs
-                if ~toggle_sign
-                    smallinds_new = or(w_comb<LBs,w_comb>UBs);
-                elseif isequal(toggle_sign,true)
-                    smallinds_new = any([w_comb<LBs,w_comb>UBs,w_sign],2);
-                elseif isnumeric(toggle_sign)
-                    if sum(~smallinds)<toggle_sign
-                        smallinds_new = any([w_comb<LBs,w_comb>UBs,w_sign],2);
-                    else
-                        smallinds_new = or(w_comb<LBs,w_comb>UBs);
-                    end
-                end
-                smallinds_new(incl_inds) = 0;
-                if all(smallinds_new(:)==smallinds(:))
-                    its = j;
-                    return
-                else
-                    smallinds = smallinds_new;
-                    ws(smallinds,:)=0;
-                    for p = 1:length(Gs)
-                        G = Gs{p};
-                        b = bs{p};
-                        M = Ms{p};
-                        if ~isempty(linregargss)
-                            linregargs = linregargss{p};
-                        else    
-                            linregargs  = {};
-                        end
-                        ws(:,p) = M.*obj.linreg(G(:,~smallinds),b,linregargs{:},'S',~smallinds);
-                    end
-                end
-            end
-            its = j;
-
-        end
-
-        function [WS,its] = sparsifyDynamics_wendy(obj,WS,lambda,M,bnds,maxits,cov_thresh,vw)
-            LBs = lambda*max(1./M,bnds);
-            UBs = 1/lambda*min(1./M,bnds);
-            smallinds = WS.weights*0;
-            n = length(smallinds);
-            for j=1:min(n,maxits)
-                smallinds_new = or(abs(WS.weights)<LBs,abs(WS.weights)>UBs);
-                if all(smallinds_new(:)==smallinds(:))
-                    its = j;
-                    return
-                else
-                    smallinds = smallinds_new;
-                    w = WS.weights;
-                    w(smallinds) = 0;
-                    WS.add_weights(w,'toggle_cov',1);
-                    if any(w)
-                        [WS,~,~,~,C] = obj.wendy(WS,vw{:});
-                        w = WS.weights;
-                        inds = find(w);
-                        if ~isempty(inds)
-                            I = abs(w(inds)) < sqrt(diag(C))*cov_thresh;
-                            w(inds(I)) = 0;
-                            WS.add_weights(w,'toggle_cov',1);
-                        end
-                    end
-                end
-            end
-            its = j;
-        end
-
-        function [W,resid,its_all,lossvals,thrs_EL] = wsindy_pde_RGLS_seq_qp(obj,lambdas,gamma,G,b,M,maxits,alpha,A,c,excl_inds,opt_tol,const_tol,max_its,disp_opt)
-
-            maxits=min(maxits,size(G,2));
-            
-            [~,m] = size(G);
-            [~,num_eq] = size(b);
-            
-            W_ls = [G;gamma*eye(m)] \ [b;zeros(m,num_eq)];
-            GW_ls = norm(G*W_ls);
-            
-            proj_cost = [];
-            overfit_cost = [];
-            lossvals = [];
-            
-            if isempty(lambdas)
-                lam_max = max(max(abs(G'*b),[],2)./vecnorm(G).^2');
-                lam_min = min(vecnorm(G*W_ls))/size(G,2)/max(vecnorm(G));
-                lambdas = 10.^linspace(log10(lam_min), log10(lam_max),50);
-            end
-            
-            if and(length(lambdas)==1,all(lambdas<0))
-                lam_max = max(max(abs(G'*b),[],2)./vecnorm(G).^2');
-                lam_min = min(vecnorm(G*W_ls))/size(G,2)/max(vecnorm(G));
-                lambdas = 10.^linspace(log10(lam_min), log10(lam_max),-lambdas);
-            end
-           
-            W = zeros(m,num_eq);
-            for l=1:length(lambdas)
-                lambda = lambdas(l);
-                for k=1:num_eq
-                    if isempty(M)
-                        [W(:,k),its,~] = obj.sparsifyDynamics_qp(G,b(:,k),lambda,gamma,[],A{k},c{k},find(excl_inds{k}),opt_tol,const_tol,max_its,disp_opt,maxits);
-                    else
-                        [W(:,k),its,~] = obj.sparsifyDynamics_qp(G,b(:,k),lambda,gamma,M(:,k),A{k},c{k},find(excl_inds{k}),opt_tol,const_tol,max_its,disp_opt,maxits);
-                        W(:,k) = W(:,k)./M(:,k);
-                    end
-                end
-                proj_cost = [proj_cost alpha*norm(G*(W-W_ls))/GW_ls];
-                overfit_cost = [overfit_cost (1-alpha)*length(find(W))/length(find(W_ls))];
-                lossvals = [lossvals proj_cost(end) + overfit_cost(end)];
-            end
-            
-            l = find(lossvals == min(lossvals),1);
-            lambda = lambdas(l);
-            its_all = zeros(num_eq,1);
-            
-            resid = b*0;
-            for k=1:num_eq
-                if isempty(M)
-                    [W(:,k),its,thrs_EL] = obj.sparsifyDynamics_qp(G,b(:,k),lambda,gamma,[],A{k},c{k},find(excl_inds{k}),opt_tol,const_tol,max_its,disp_opt,maxits);
-                    resid(:,k) = (b(:,k) - G*W(:,k))/norm(b(:,k)); 
-                else
-                    [W(:,k),its,thrs_EL] = obj.sparsifyDynamics_qp(G,b(:,k),lambda,gamma,M(:,k),A{k},c{k},find(excl_inds{k}),opt_tol,const_tol,max_its,disp_opt,maxits);
-                    resid(:,k) = (b(:,k) - G*(W(:,k)./M(:,k)))/norm(b(:,k)); 
-                end
-                its_all(k) = its;
-            end
-            lossvals = [lossvals;lambdas; [[lossvals(1:l);lambdas(1:l)] zeros(2,length(lambdas)-l)]; proj_cost; overfit_cost];
-        end
-        
-        function [Xi,its,thrs_EL] = sparsifyDynamics_qp(obj,Theta,dXdt,lambda,gamma,M,A,b,excl_inds,opt_tol,const_tol,max_its,disp_opt,max_its_stls)
-        % Copyright 2015, All Rights Reserved
-        % Code by Steven L. Brunton
-        % For Paper, "Discovering Governing Equations from Data: 
-        %        Sparse Identification of Nonlinear Dynamical Systems"
-        % by S. L. Brunton, J. L. Proctor, and J. N. Kutz
-        %
-        % modified by Daniel A. Messenger, 2020 to prevent return of zero vector
-        % and include regularization
-        %
-        % compute Sparse regression: sequential least squares
-            if isempty(disp_opt)
-                disp_opt='none';
-            end
-            if isempty(const_tol)
-                const_tol=10^-16;
-            end
-            options = optimoptions('quadprog','Display',disp_opt,'ConstraintTolerance',const_tol,'OptimalityTolerance',opt_tol,'MaxIterations',max_its);
-            n = min(size(dXdt));
-            nn = size(Theta,2);
-        
-            dXdt_conj = Theta'*dXdt;
-            Theta_conj = Theta'*Theta;
-        
-            if  gamma ~= 0
-                Theta_conj = Theta_conj+gamma^2*eye(nn);
-            end
-        
-            Xi = quadprog(Theta_conj,-dXdt_conj,A,b,[],[],[],[],[],options);  % initial guess: Least-squares
-            if isempty(M)
-                thrs_EL = [];
-            else
-                Xi = M.*Xi;
-                bnds = norm(dXdt)./vecnorm(Theta)'.*M; 
-                LBs = lambda*max(1,bnds);
-                UBs = 1/lambda*min(1,bnds);
-                thrs_EL = [LBs bnds UBs];
-            end
-        
-            smallinds = 0*Xi;
-            its = 0;
-            while its < max_its_stls
-                if ~isempty(M)
-                    smallinds_new = or(abs(Xi)<LBs,abs(Xi)>UBs);
-                    smallinds_new(excl_inds) = 0;
-                    if or(length(find(smallinds_new))==nn,all(smallinds_new(:)==smallinds(:)))
-                        return
-                    else
-                        smallinds = smallinds_new;
-                        Xi(smallinds)=0;
-                        for ind=1:n
-                            biginds = ~smallinds(:,ind);
-                            Xi(biginds,ind) = M(biginds).*quadprog(Theta_conj(biginds,biginds),-dXdt_conj(biginds,ind),A(:,biginds(1:min(size(A,2),end))),b,[],[],[],[],[],options);
-                        end
-                    end
-                else
-                    smallinds_new = (abs(Xi)<lambda);
-                    smallinds_new(excl_inds) = 0;
-                    if or(all(smallinds_new(:)==smallinds(:)),length(find(smallinds_new))==length(Xi))
-                        its = j;
-                        return
-                    else
-                        smallinds = smallinds_new;
-                        Xi(smallinds)=0;
-                        for ind = 1:n        
-                            biginds = ~smallinds(:,ind);
-                            Xi(biginds,ind) = quadprog(Theta_conj(biginds,biginds),-dXdt_conj(biginds,ind),A(:,biginds(1:min(size(A,2),end))),b,[],[],[],[],[],options);
-                        end
-                    end
-                end
-                its=its+1;
-            end
-        end
+        % function [WS,loss_wsindy,its] = MSTLSQP(obj,WS,varargin)
+        %     if isempty(WS.G)
+        %         WS.cat_Gb;
+        %     end
+        %     G = WS.G; 
+        %     b = WS.b;
+        % 
+        %     if WS.toggleH
+        %         default_M_diag = {ones(length(WS.lib.terms),1)};
+        %     else
+        %         default_M_diag = cellfun(@(G) ones(size(G,2),1),G,'uni',0);
+        %     end
+        % 
+        %     default_lambdas = 10.^linspace(-4,0,100);
+        %     default_maxits = inf;
+        %     default_alpha = 0.01;
+        %     default_gamma = 0;
+        % 
+        %     defaultexcl_inds=repmat({[]},1,WS.numeq);
+        %     defaultAineq=repmat({[]},1,WS.numeq);
+        %     defaultbineq=repmat({[]},1,WS.numeq);
+        %     defaultopt_tol = min(cellfun(@(G)1/cond(G'*G),WS.G));
+        %     defaultconst_tol = defaultopt_tol;
+        %     defaultmaxQPits = 1000;
+        %     defaultdispQP='off';
+        %     defaultauto = [];
+        % 
+        %     inp = inputParser;
+        %     addRequired(inp,'WS');
+        %     addParameter(inp,'lambdas',default_lambdas);
+        %     addParameter(inp,'maxits',default_maxits);
+        %     addParameter(inp,'alpha',default_alpha);
+        %     addParameter(inp,'gamma',default_gamma);
+        %     addParameter(inp,'M_diag',default_M_diag);
+        % 
+        %     addParameter(inp,'excl_inds',defaultexcl_inds);
+        %     addParameter(inp,'Aineq',defaultAineq);
+        %     addParameter(inp,'bineq',defaultbineq);
+        %     addParameter(inp,'opt_tol',defaultopt_tol);
+        %     addParameter(inp,'const_tol',defaultconst_tol);
+        %     addParameter(inp,'maxQPits',defaultmaxQPits);
+        %     addParameter(inp,'dispQP',defaultdispQP);
+        %     addParameter(inp,'auto',defaultauto);
+        % 
+        %     parse(inp,WS,varargin{:});  
+        % 
+        %     lambdas = inp.Results.lambdas;
+        %     maxits = inp.Results.maxits;
+        %     alpha = (inp.Results.alpha*mean(arrayfun(@(L)length(L.terms),WS.lib))+1)^-1;
+        %     gamma = inp.Results.gamma;
+        %     M_diag = inp.Results.M_diag;
+        % 
+        %     excl_inds = inp.Results.excl_inds;
+        %     Aineq = inp.Results.Aineq;
+        %     bineq = inp.Results.bineq;
+        %     opt_tol = inp.Results.opt_tol;
+        %     const_tol = inp.Results.const_tol;
+        %     maxQPits = inp.Results.maxQPits;
+        %     dispQP = inp.Results.dispQP;
+        %     auto = inp.Results.auto;
+        % 
+        %     if isequal(auto,'weakLyap')
+        %         Aineq = cell(3,1);
+        %         bineq = cell(3,1);
+        %         E = eye(3);
+        %         for j=1:WS.numeq
+        %             tt = term('ftag',E(j,:),'linOp',1);
+        %             v = WS.tf{1}{j}.test(WS.dat,tt);
+        %             Aineq{j} = v(:).*WS.G{j};
+        %             bineq{j} = zeros(size(Aineq{j},1),1);
+        %         end
+        %     end
+        % 
+        %     wtemp = cell(WS.numeq,1);
+        %     its = zeros(WS.numeq,1);
+        %     loss_wsindy = zeros(WS.numeq+1,length(lambdas));
+        %     for i=1:WS.numeq
+        %         [wtemp{i},resid,its(i),lossvals,thrs_EL] = obj.wsindy_pde_RGLS_seq_qp(lambdas,gamma,G{i},b{i},M_diag{i},maxits,alpha,Aineq(i),bineq(i),excl_inds(i),opt_tol,const_tol,maxQPits,dispQP);
+        %         loss_wsindy(i,:) = lossvals(1,:);
+        %     end
+        %     loss_wsindy(end,:) = lambdas;
+        %     WS.weights = cell2mat(wtemp);
+        % end
+        % 
+        % function [W,resid,its_all,lossvals,thrs_EL] = wsindy_pde_RGLS_seq_qp(obj,lambdas,gamma,G,b,M,maxits,alpha,A,c,excl_inds,opt_tol,const_tol,max_its,disp_opt)
+        % 
+        %     maxits=min(maxits,size(G,2));
+        % 
+        %     [~,m] = size(G);
+        %     [~,num_eq] = size(b);
+        % 
+        %     W_ls = [G;gamma*eye(m)] \ [b;zeros(m,num_eq)];
+        %     GW_ls = norm(G*W_ls);
+        % 
+        %     proj_cost = [];
+        %     overfit_cost = [];
+        %     lossvals = [];
+        % 
+        %     if isempty(lambdas)
+        %         lam_max = max(max(abs(G'*b),[],2)./vecnorm(G).^2');
+        %         lam_min = min(vecnorm(G*W_ls))/size(G,2)/max(vecnorm(G));
+        %         lambdas = 10.^linspace(log10(lam_min), log10(lam_max),50);
+        %     end
+        % 
+        %     if and(length(lambdas)==1,all(lambdas<0))
+        %         lam_max = max(max(abs(G'*b),[],2)./vecnorm(G).^2');
+        %         lam_min = min(vecnorm(G*W_ls))/size(G,2)/max(vecnorm(G));
+        %         lambdas = 10.^linspace(log10(lam_min), log10(lam_max),-lambdas);
+        %     end
+        % 
+        %     W = zeros(m,num_eq);
+        %     for l=1:length(lambdas)
+        %         lambda = lambdas(l);
+        %         for k=1:num_eq
+        %             if isempty(M)
+        %                 [W(:,k),its,~] = obj.sparsifyDynamics_qp(G,b(:,k),lambda,gamma,[],A{k},c{k},find(excl_inds{k}),opt_tol,const_tol,max_its,disp_opt,maxits);
+        %             else
+        %                 [W(:,k),its,~] = obj.sparsifyDynamics_qp(G,b(:,k),lambda,gamma,M(:,k),A{k},c{k},find(excl_inds{k}),opt_tol,const_tol,max_its,disp_opt,maxits);
+        %                 W(:,k) = W(:,k)./M(:,k);
+        %             end
+        %         end
+        %         proj_cost = [proj_cost alpha*norm(G*(W-W_ls))/GW_ls];
+        %         overfit_cost = [overfit_cost (1-alpha)*length(find(W))/length(find(W_ls))];
+        %         lossvals = [lossvals proj_cost(end) + overfit_cost(end)];
+        %     end
+        % 
+        %     l = find(lossvals == min(lossvals),1);
+        %     lambda = lambdas(l);
+        %     its_all = zeros(num_eq,1);
+        % 
+        %     resid = b*0;
+        %     for k=1:num_eq
+        %         if isempty(M)
+        %             [W(:,k),its,thrs_EL] = obj.sparsifyDynamics_qp(G,b(:,k),lambda,gamma,[],A{k},c{k},find(excl_inds{k}),opt_tol,const_tol,max_its,disp_opt,maxits);
+        %             resid(:,k) = (b(:,k) - G*W(:,k))/norm(b(:,k)); 
+        %         else
+        %             [W(:,k),its,thrs_EL] = obj.sparsifyDynamics_qp(G,b(:,k),lambda,gamma,M(:,k),A{k},c{k},find(excl_inds{k}),opt_tol,const_tol,max_its,disp_opt,maxits);
+        %             resid(:,k) = (b(:,k) - G*(W(:,k)./M(:,k)))/norm(b(:,k)); 
+        %         end
+        %         its_all(k) = its;
+        %     end
+        %     lossvals = [lossvals;lambdas; [[lossvals(1:l);lambdas(1:l)] zeros(2,length(lambdas)-l)]; proj_cost; overfit_cost];
+        % end
+        % 
+        % function [Xi,its,thrs_EL] = sparsifyDynamics_qp(obj,Theta,dXdt,lambda,gamma,M,A,b,excl_inds,opt_tol,const_tol,max_its,disp_opt,max_its_stls)
+        % % Copyright 2015, All Rights Reserved
+        % % Code by Steven L. Brunton
+        % % For Paper, "Discovering Governing Equations from Data: 
+        % %        Sparse Identification of Nonlinear Dynamical Systems"
+        % % by S. L. Brunton, J. L. Proctor, and J. N. Kutz
+        % %
+        % % modified by Daniel A. Messenger, 2020 to prevent return of zero vector
+        % % and include regularization
+        % %
+        % % compute Sparse regression: sequential least squares
+        %     if isempty(disp_opt)
+        %         disp_opt='none';
+        %     end
+        %     if isempty(const_tol)
+        %         const_tol=10^-16;
+        %     end
+        %     options = optimoptions('quadprog','Display',disp_opt,'ConstraintTolerance',const_tol,'OptimalityTolerance',opt_tol,'MaxIterations',max_its);
+        %     n = min(size(dXdt));
+        %     nn = size(Theta,2);
+        % 
+        %     dXdt_conj = Theta'*dXdt;
+        %     Theta_conj = Theta'*Theta;
+        % 
+        %     if  gamma ~= 0
+        %         Theta_conj = Theta_conj+gamma^2*eye(nn);
+        %     end
+        % 
+        %     Xi = quadprog(Theta_conj,-dXdt_conj,A,b,[],[],[],[],[],options);  % initial guess: Least-squares
+        %     if isempty(M)
+        %         thrs_EL = [];
+        %     else
+        %         Xi = M.*Xi;
+        %         bnds = norm(dXdt)./vecnorm(Theta)'.*M; 
+        %         LBs = lambda*max(1,bnds);
+        %         UBs = 1/lambda*min(1,bnds);
+        %         thrs_EL = [LBs bnds UBs];
+        %     end
+        % 
+        %     smallinds = 0*Xi;
+        %     its = 0;
+        %     while its < max_its_stls
+        %         if ~isempty(M)
+        %             smallinds_new = or(abs(Xi)<LBs,abs(Xi)>UBs);
+        %             smallinds_new(excl_inds) = 0;
+        %             if or(length(find(smallinds_new))==nn,all(smallinds_new(:)==smallinds(:)))
+        %                 return
+        %             else
+        %                 smallinds = smallinds_new;
+        %                 Xi(smallinds)=0;
+        %                 for ind=1:n
+        %                     biginds = ~smallinds(:,ind);
+        %                     Xi(biginds,ind) = M(biginds).*quadprog(Theta_conj(biginds,biginds),-dXdt_conj(biginds,ind),A(:,biginds(1:min(size(A,2),end))),b,[],[],[],[],[],options);
+        %                 end
+        %             end
+        %         else
+        %             smallinds_new = (abs(Xi)<lambda);
+        %             smallinds_new(excl_inds) = 0;
+        %             if or(all(smallinds_new(:)==smallinds(:)),length(find(smallinds_new))==length(Xi))
+        %                 its = j;
+        %                 return
+        %             else
+        %                 smallinds = smallinds_new;
+        %                 Xi(smallinds)=0;
+        %                 for ind = 1:n        
+        %                     biginds = ~smallinds(:,ind);
+        %                     Xi(biginds,ind) = quadprog(Theta_conj(biginds,biginds),-dXdt_conj(biginds,ind),A(:,biginds(1:min(size(A,2),end))),b,[],[],[],[],[],options);
+        %                 end
+        %             end
+        %         end
+        %         its=its+1;
+        %     end
+        % end
     
+        %%% subspace pursuit with cross-validation -- adapted from WeakIdent paper
         function [WS,CV_all,supports_all] = subspacePursuitCV(obj,WS,varargin)
 
             inp = inputParser;
@@ -1659,6 +1375,393 @@ classdef WS_opt < handle
             % compute weighted error
             err              = e1 * (1-ratio) + e2 * ratio;
             
+        end
+
+        %%% Helper functions
+        function x = linreg(obj,A,b,varargin)
+            p = inputParser;
+            addRequired(p,'A');
+            addRequired(p,'b');
+            addParameter(p,'S',true(size(A,2),1));
+            addParameter(p,'C',speye(size(A,2)));
+            addParameter(p,'Cinv',[]);
+            addParameter(p,'x0',[]);
+            addParameter(p,'Aineq',[]);
+            addParameter(p,'bineq',[]);
+            addParameter(p,'Aeq',[]);
+            addParameter(p,'beq',[]);
+            addParameter(p,'LB',[]);
+            addParameter(p,'UB',[]);
+            addParameter(p,'consttol',10^-10);
+            addParameter(p,'opttol',10^-10);
+            addParameter(p,'maxits',1000);
+            addParameter(p,'verbose','none');
+            parse(p,A,b,varargin{:})
+
+            x0 = p.Results.x0;
+
+            Aineq = p.Results.Aineq;
+            bineq = p.Results.bineq;
+            if isempty(Aineq)
+                Aineq = [];
+                bineq = [];
+            end
+            Aeq = p.Results.Aeq;
+            beq = p.Results.beq;
+            if isempty(Aeq)
+                Aeq = [];
+                beq = [];
+            end
+            LB = p.Results.LB;
+            UB = p.Results.UB;
+            consttol = p.Results.consttol;
+            opttol = p.Results.opttol;
+            maxits = p.Results.maxits;
+            S = p.Results.S;
+            C = p.Results.C;
+            Cinv = p.Results.Cinv;
+            verbosity = p.Results.verbose;
+
+            if any(S)
+                if size(A,2)~=length(find(S))
+                    A = A(:,S);
+                    C = C(S,:);
+                end
+                A = A*C;
+                if isempty(Cinv)
+                    Cinv = pinv(full(C));
+                end
+
+                if isempty(x0)
+                    if diff(size(A))>=0
+
+                        % reg0 = rank(A,norm(A)*10^-4);
+                        % reg_inds = abs(b'*A)./vecnorm(A)/norm(b);
+                        % [~,reg_inds] = sort(reg_inds,'descend');
+                        % reg_inds = reg_inds(1:min(reg0,end));
+                        % x0 = zeros(size(A,2),1);
+                        % x0(reg_inds) = A(:,reg_inds) \ b;
+                        % x0 = obj.inject_sparse(x0,S);
+
+                        x0 = obj.inject_sparse(C*lsqminnorm(A,b),S);
+                    else
+                        x0 = obj.inject_sparse(C*(A\b),S);
+                    end
+                end
+    
+                if any([~isempty(Aineq) ~isempty(bineq) ~isempty(Aeq) ~isempty(beq) ~isempty(LB) ~isempty(UB)])
+                    colnorms = vecnorm(A);
+                    A = A./colnorms;
+                    if ~isempty(Aineq)
+                        Aineq = Aineq(:,S)*C;
+                        Aineq = Aineq./colnorms;
+                        bineq = bineq(logical(sum(Aineq~=0,2)));
+                        Aineq = Aineq(logical(sum(Aineq~=0,2)),:);
+                    end
+                    if ~isempty(Aeq)
+                        Aeq = Aeq(:,S)*C;
+                        Aeq = Aeq./colnorms;
+                        beq = beq(logical(sum(Aeq~=0,2)));
+                        Aeq = Aeq(logical(sum(Aeq~=0,2)),:);
+                    end
+                    if ~isempty(LB)
+                        LB = LB(S)*C;
+                        LB = LB.*colnorms(:);
+                    end
+                    if ~isempty(UB)
+                        UB = UB(S)*C;
+                        UB = UB.*colnorms(:);
+                    end
+                    % if isequal(verbosity,'None')
+                    %     N1 = null(Aeq);
+                    %     try
+                    %         N = null((Aineq*N1)');
+                    %         e = max(abs(bineq'*N));
+                    %         if e > 0
+                    %             disp(['NO FEASIBLE BOUNDARY POINT: e=',num2str(e)])
+                    %         end
+                    %     end
+                    % end
+                    options = optimoptions('quadprog','Display',verbosity,'ConstraintTolerance',consttol,'OptimalityTolerance',opttol,'MaxIterations',maxits);
+                    flag_feasible = true;
+                    if ~isempty(x0)
+                        %%% project least squares onto feasible set
+                        x0 = Cinv*x0(S).*colnorms(:);
+                        x0_temp = quadprog(eye(length(x0)),-x0,Aineq,bineq,Aeq,beq,LB,UB,[],options);
+                        if isempty(x0_temp)
+                            fprintf('\nfeasible set is empty, returning null vector')
+                            flag_feasible = false;
+                            x0 = x0*0;
+                        else
+                            x0 = x0_temp;
+                        end
+                    end
+                    if flag_feasible
+                        x = quadprog((A'*A),-(A'*b),Aineq,bineq,Aeq,beq,LB,UB,[],options);
+                    else
+                        x = x0;
+                    end
+                    x = x./colnorms(:);
+                    if isempty(x)
+                        x = zeros(size(A,2),1);
+                    end
+                    x = obj.inject_sparse(C*x,S);
+                else
+                    x = x0;
+                end
+            else
+                x = S*0;
+            end
+
+        end
+
+        function linregargs  = lra_to_blkdiag(obj,lra)
+            % convert linear regression arguments on per-equation basis to concatenated arguments fit for a global blkdiag solve
+            n = length(lra);
+            keys = cellfun(@(eq) eq(1:2:end), lra(:)', 'un', 0);
+            keys = unique([keys{:}]);
+            linregargs = cell(2,length(keys));
+            linregargs(1,:) = keys;
+            for k=1:length(keys)
+                for j=1:n
+                    ind = cellfun(@(c) isequal(c,keys{k}), lra{j});
+                    if any(ind)
+                        ind = find(ind) + 1;
+                        if isempty(linregargs{2,k})
+                            linregargs{2,k} = lra{j}{ind};
+                        elseif ismember(keys{k},{'Aineq','Aeq','C','Cinv'})
+                            linregargs{2,k} = blkdiag(linregargs{2,k},lra{j}{ind});
+                        elseif ismember(keys{k},{'bineq','beq','LB','UB','x0','S'})
+                            linregargs{2,k} = [linregargs{2,k};lra{j}{ind}];
+                        end
+                    end
+                end
+            end
+            linregargs = {linregargs(:)};
+        end
+
+        function [LBs, UBs, thrs_EL] = get_coeff_threshold_bnds(obj,G,b,M,lambda,toggle_jointthresh)
+            %%% compute column-specific bounds on coefficients, such that coefficients outside of these bounds are thresholded
+            %%% thrs_EL for convenience contains [LBs, bnds, UBs] where LBs and UBs are simply bnds 
+
+            bnds = norm(b)./vecnorm(G)'.*M;                                 % inverse of term magnitudes rel to b
+            bnds2 = norm(b)^2./abs(b'*G)'.*M;                               % inverse of term projections onto b rel to b
+
+            if toggle_jointthresh == 1
+                % threshold based on JCP paper
+                LBs = lambda*max(1,bnds);
+                UBs = 1/lambda*min(1,bnds);
+            elseif toggle_jointthresh == 2
+                % threshold only on term magnitude
+                LBs = lambda*bnds;
+                UBs = 1/lambda*bnds;
+            elseif toggle_jointthresh == 3
+                % threshold based on JCP but with term projection
+                UBs = 1/lambda*bnds; % upper bound by term magnitude
+                LBs = lambda*bnds2; % lower bound by projection
+            elseif toggle_jointthresh == 4
+                % threshold only on term projection
+                LBs = lambda*bnds2;
+                UBs = 1/lambda*bnds2;
+            else
+                % threshold only Hamiltonian coarse-graining - should be
+                % robust to small coefficients
+                w0 = abs(b'*G);
+                nrms = vecnorm(G);
+                alpha = max(w0./nrms.^2.*M');
+                beta = max(w0./nrms/norm(b));
+                LBs = lambda*max(alpha,bnds*beta); 
+                UBs = 1/lambda*min(alpha,bnds*beta);
+            end
+            thrs_EL = [LBs bnds UBs];
+        end
+
+        function [w,its,thrs_EL] = sparsifyDynamics(obj,G,b,lambda,gamma,M,maxits,toggle_jointthresh,linregargs,incl_inds)
+
+            [~,nn] =size(G);                                                % num terms in library
+            n = size(b,2);                                                  % num equations
+
+            if isempty(M)                                                   % coefficient scaling 
+                M = ones(nn,1);
+            end
+            
+            if isequal(incl_inds,'all')                                     % specify terms to exclude from thresholding / keep in model regardless
+                incl_inds = 1:nn;
+            end
+
+            if  gamma ~= 0                                                  % Tikhonov regularization 
+                G = [G;gamma*eye(nn)];
+                b = [b;zeros(nn,n)];
+            end
+
+            % get term-specific thresholds
+            [LBs, UBs, thrs_EL] = obj.get_coeff_threshold_bnds(G,b,M,lambda,toggle_jointthresh);
+            
+            % initialize
+            w = M.*obj.linreg(G,b,linregargs{:});
+            smallinds = 0*w;
+
+            % STLS
+            for j=1:min(nn,maxits)
+                smallinds_new = or(abs(w)<LBs,abs(w)>UBs);
+                smallinds_new(incl_inds) = 0;
+                if all(smallinds_new(:)==smallinds(:))
+                    its = j;
+                    return
+                else
+                    smallinds = smallinds_new;
+                    w(smallinds)=0;
+                    for ind=1:n
+                        w(:,ind) = M.*obj.linreg(G(:,~smallinds),b(:,ind),linregargs{:},'S',~smallinds);
+                    end
+                end
+            end
+            its = j;
+        end
+
+        function [ws,its,thrs_ELs] = sparsifyGroupDynamics(obj,Gs,bs,lambda,gamma,Ms,maxits,toggle_jointthresh,linregargss,incl_inds,toggle_sign)
+            %%% designed for single RHS vector only
+
+            gs_norm = 1;
+
+            ws = [];
+            UBss = [];
+            LBss = []; 
+            for p = 1:length(Gs)
+                G = Gs{p};
+                b = bs{p};
+                M = Ms{p};
+                if ~isempty(linregargss)
+                    linregargs = linregargss{p};
+                else    
+                    linregargs  = {};
+                end
+                [~,nn] =size(G);
+                if isempty(M)
+                    M = ones(nn,1);
+                end
+                if isequal(incl_inds,'all')
+                    incl_inds = 1:nn;
+                end
+                if  gamma ~= 0
+                    G = [G;gamma*eye(nn)];
+                    b = [b;zeros(nn,1)];
+                end
+                
+                w = M.*obj.linreg(G,b,linregargs{:});
+
+                % get term-specific thresholds
+                [LBs, UBs, thrs_EL] = obj.get_coeff_threshold_bnds(G,b,M,lambda,toggle_jointthresh);
+                % if toggle_jointthresh == 1
+                %     % threshold based on JCP paper
+                %     bnds = norm(b)./vecnorm(G)'.*M;
+                %     LBs = lambda*max(1,bnds);
+                %     UBs = 1/lambda*min(1,bnds);
+                % elseif toggle_jointthresh == 2
+                %     % threshold only on term magnitude
+                %     bnds = norm(b)./vecnorm(G)'.*M;
+                %     LBs = lambda*bnds;
+                %     UBs = 1/lambda*bnds;
+                % elseif toggle_jointthresh == 3
+                %     % threshold based on JCP but with term projection
+                %     bnds = norm(b)^2./abs(b'*G)'.*M;
+                %     bnds2 = norm(b)./vecnorm(G)'.*M;
+                %     UBs = 1/lambda*bnds2; % upper bound by term magnitude
+                %     LBs = lambda*bnds; % lower bound by projection
+                % elseif toggle_jointthresh == 4
+                %     % threshold only on term projection
+                %     bnds = norm(b)^2./abs(b'*G)'.*M;
+                %     LBs = lambda*bnds;
+                %     UBs = 1/lambda*bnds;
+                % end
+                ws = [ws w];
+                Gs{p} = G;
+                bs{p} = b;
+                UBss = [UBss UBs];
+                LBss = [LBss LBs];
+            end
+
+            UBs = vecnorm(UBss,gs_norm,2);
+            LBs = vecnorm(LBss,gs_norm,2);
+            thrs_ELs = [UBs LBs];
+
+            w_comb = zeros(size(ws,1),1);
+            smallinds = 0*w_comb ;
+            for j=1:min(nn,maxits)
+
+                %%% combine coeffs
+                w_comb = vecnorm(ws,gs_norm,2);
+                w_sign = abs(std(sign(ws),[],2));
+
+                %%% threshold based on combined coeffs
+                if ~toggle_sign
+                    smallinds_new = or(w_comb<LBs,w_comb>UBs);
+                elseif isequal(toggle_sign,true)
+                    smallinds_new = any([w_comb<LBs,w_comb>UBs,w_sign],2);
+                elseif isnumeric(toggle_sign)
+                    if sum(~smallinds)<toggle_sign
+                        smallinds_new = any([w_comb<LBs,w_comb>UBs,w_sign],2);
+                    else
+                        smallinds_new = or(w_comb<LBs,w_comb>UBs);
+                    end
+                end
+                smallinds_new(incl_inds) = 0;
+                if all(smallinds_new(:)==smallinds(:))
+                    its = j;
+                    return
+                else
+                    smallinds = smallinds_new;
+                    ws(smallinds,:)=0;
+                    for p = 1:length(Gs)
+                        G = Gs{p};
+                        b = bs{p};
+                        M = Ms{p};
+                        if ~isempty(linregargss)
+                            linregargs = linregargss{p};
+                        else    
+                            linregargs  = {};
+                        end
+                        ws(:,p) = M.*obj.linreg(G(:,~smallinds),b,linregargs{:},'S',~smallinds);
+                    end
+                end
+            end
+            its = j;
+
+        end
+
+        function [WS,its] = sparsifyDynamics_wendy(obj,WS,lambda,M,bnds,maxits,cov_thresh,vw)
+            LBs = lambda*max(1./M,bnds);
+            UBs = 1/lambda*min(1./M,bnds);
+            smallinds = WS.weights*0;
+            n = length(smallinds);
+            for j=1:min(n,maxits)
+                smallinds_new = or(abs(WS.weights)<LBs,abs(WS.weights)>UBs);
+                if all(smallinds_new(:)==smallinds(:))
+                    its = j;
+                    return
+                else
+                    smallinds = smallinds_new;
+                    w = WS.weights;
+                    w(smallinds) = 0;
+                    WS.add_weights(w,'toggle_cov',1);
+                    if any(w)
+                        [WS,~,~,~,C] = obj.wendy(WS,vw{:});
+                        w = WS.weights;
+                        inds = find(w);
+                        if ~isempty(inds)
+                            I = abs(w(inds)) < sqrt(diag(C))*cov_thresh;
+                            w(inds(I)) = 0;
+                            WS.add_weights(w,'toggle_cov',1);
+                        end
+                    end
+                end
+            end
+            its = j;
+        end
+    
+        function y = inject_sparse(obj,w,S)
+            y = S*0;
+            y(S) = w;
         end
 
     end
