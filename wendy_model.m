@@ -99,18 +99,31 @@ classdef wendy_model < wsindy_model
         function biasGs = get_biasG(obj,varargin)
             p = inputParser;
             addParameter(p,'exact_bias',true);
+            addParameter(p,'S',[]);
             parse(p,varargin{:})
+            S = p.Results.S;
+            if isempty(S)
+                S = arrayfun(@(L)false(length(L.terms),1),obj.lib,'uni',0);
+                if isempty(obj.weights)
+                    S = cellfun(@(s)~s,S,'un',0);
+                else
+                    supp = obj.get_supp;
+                    for i=1:length(S)
+                        S{i}(supp{i}) = true;
+                    end
+                end
+            end
+
             exact_bias = p.Results.exact_bias;
             if isempty(obj.biasG)
+                biasGs = obj.Gs;
                 if or(~exact_bias,~obj.toggle_exact_bias)
-                    biasGs = obj.Gs;
-                    S = obj.get_supp;
                     for i=1:obj.ntraj
                         sigs = obj.dat(i).estimate_sigma;
                         for j=1:obj.numeq
                             biasGs{i}{j} = biasGs{i}{j}*0; 
                             for k=1:length(obj.lib(j).terms)
-                                if ismember(k,S{j})
+                                if S{j}(k)
                                     lap = obj.lib(j).terms{k}.get_lap;
                                     G_ij_k = arrayfun(@(tt,ss) ss^2*obj.tf{i}{j}.test(obj.dat(i),tt), lap, cell2mat(sigs(:)'),'un',0);
                                     biasGs{i}{j}(:,k) = 0.5*sum(cell2mat(G_ij_k),2);
@@ -118,27 +131,35 @@ classdef wendy_model < wsindy_model
                             end
                         end 
                     end
-                    obj.biasG = cellfun(@(Gs) blkdiag(Gs{:}), biasGs,'uni',0);
-                    obj.biasG = cell2mat(obj.biasG);
                 else
-                    % disp('computing exact bias')
+                    disp('computing exact bias')
                     for i=1:obj.ntraj
-                        s = obj.dat(i).estimate_sigma;
+                        sigs = obj.dat(i).estimate_sigma;
                         lib_ext = arrayfun(@(j)library(),1:obj.numeq);
                         Ainvs = cell(obj.numeq,1);
                         supps = cell(obj.numeq,1);
                         for eq=1:obj.numeq
-                            [~,Ainvs{eq},~,supps{eq},lib_ext(eq)] = getAinv(cell2mat(obj.lib(eq).tags'),s);
+                            [~,Ainvs{eq},~,supps{eq},lib_ext(eq)] = getAinv(cell2mat(obj.lib(eq).tags'),sigs);
                         end
                         Ainvs = cellfun(@(A) A-eye(size(A,1)), Ainvs,'un',0);
                         Ainvs_r = cellfun(@(Ai,sup)Ai(:,sup),Ainvs,supps,'un',0);
-                        Ainv = blkdiag(Ainvs_r{:});
-                        WS_temp = wsindy_model(obj.dat(i),lib_ext,obj.tf{i},'lhsterms',obj.lhsterms,'catm','blkdiag');
-                        WS_temp.cat_Gb;
-                        obj.biasG = cat(1,obj.biasG,-WS_temp.G{1}*Ainv);
+                        WS_temp = wsindy_model(obj.dat(i),lib_ext,obj.tf{i},'lhsterms',obj.lhsterms, 'catm', 'component');
+                        WS_temp.cat_Gb('datanorm',false);
+                        biasGs{i} = cellfun(@(G,A) -G*A, WS_temp.G, Ainvs_r, 'un', 0);
                     end
                 end
 
+                if isequal(obj.catm, 'blkdiag')
+                    obj.biasG = cellfun(@(Gs) blkdiag(Gs{:}), biasGs,'uni',0);
+                    obj.biasG = {cell2mat(obj.biasG)};
+                elseif isequal(obj.catm, 'component')
+                    obj.biasG = repmat({[]},obj.numeq,1);
+                    for n=1:obj.numeq
+                        for m=1:obj.ntraj
+                            obj.biasG{n} = [obj.biasG{n};biasGs{m}{n}];
+                        end
+                    end
+                end
             end
 
         end
@@ -152,11 +173,6 @@ classdef wendy_model < wsindy_model
             toggle_cov = IP.Results.toggle_cov;
             if toggle_cov==1
                 obj.get_cov(w);
-                if obj.statcorrect(2)>0
-                    obj.get_bias;
-                else
-                    obj.bias = sparse(length(obj.b{1}),1);
-                end
             else
                 obj.weights = w;
                 obj.get_features;
@@ -169,12 +185,8 @@ classdef wendy_model < wsindy_model
             end
             
             if obj.statcorrect(2)==1
-                % if isempty(obj.bias)
-                %     obj.get_bias;
-                % end
-                % b = b - obj.bias;
                 obj.get_biasG;
-                G = G - obj.biasG(:,sparse_inds);
+                G = G - obj.biasG{1}(:,sparse_inds);
             end
 
             if obj.statcorrect(1)>0
@@ -244,51 +256,6 @@ classdef wendy_model < wsindy_model
                 w_cell{nn} = w(ind:ind+length_vec(nn)-1);
                 ind = ind+length_vec(nn);
             end
-        end
-
-        function obj = get_biasfac(obj)
-            if isempty(obj.biasfac)
-                obj.biasfac = repmat({arrayfun(@(L)cell(length(L.terms),1),obj.lib,'uni',0)},obj.ntraj,1);
-            end
-
-            S = obj.get_supp;
-            for j=1:obj.ntraj
-                obj.dat(j).get_R0;
-                for i=1:obj.numeq
-                    for k=1:length(obj.lib(i).terms)
-                        if and(ismember(k,S{i}),isempty(obj.biasfac{j}{i}{k}))
-                            lap = obj.lib(i).terms{k}.get_lap;
-                            Y = arrayfun(@(d2) d2.evalterm(obj.dat(j)),lap(:),'uni',0);
-                            Y = cellfun(@(d2) d2(:),Y,'uni',0);
-                            Y = cell2mat(Y);
-                            Y = obj.dat(j).R0*Y;
-                            x = prod(obj.dat(j).dims);
-                            msk = spdiags(ones(x,obj.nstates),0:x:x*(obj.nstates-1),x,length(Y));
-                            V = obj.tf{j}{i}.get_testmat(obj.lib(i).terms{k}.linOp);
-                            obj.biasfac{j}{i}{k} = V*(msk*Y);
-                        end
-                    end
-                end 
-            end
-            % disp(['completed.'])
-        end
-
-        function obj = get_bias(obj)
-            if isempty(obj.biasfac)
-                obj.get_biasfac;
-            end
-            w = reshape_cell(obj.weights,arrayfun(@(L)length(L.terms),obj.lib)); 
-            obj.bias = cellfun(@(bc)cellfun(@(b)b*0,bc,'uni',0),obj.bs,'uni',0);
-            S = obj.get_supp;
-            for i=1:obj.ntraj
-                for j=1:obj.numeq
-                    for k=1:length(S{j})
-                        obj.bias{i}{j} = obj.bias{i}{j} + w{j}(S{j}(k))*obj.biasfac{i}{j}{S{j}(k)};
-                    end
-                end
-            end
-            obj.bias = cellfun(@(b)cell2mat(b),obj.bias,'un',0);
-            obj.bias = -1/2*cell2mat(obj.bias(:));
         end
 
         function bool = toggle_exact_bias(obj)
