@@ -2,8 +2,7 @@ classdef wendy_model < wsindy_model
     properties
         Hfac
         H
-        biasfac
-        bias
+        exactbias
         biasG
         statcorrect
         Amat
@@ -11,15 +10,20 @@ classdef wendy_model < wsindy_model
 
     methods
         function obj = wendy_model(dat,lib,tf,statcorrect,varargin)
+            exactbias = true;
             if ~ismember('catm', varargin(1:2:end))
                 varargin = [varargin, {'catm', 'blkdiag'}];
+            end
+            if ismember('exactbias', varargin(1:2:end))
+                ii = 2*find(ismember(varargin(1:2:end), 'exactbias'))-1;
+                exactbias = varargin{ii+1};
+                varargin = varargin([1:ii-1,ii+2:end]);
             end
             obj = obj@wsindy_model(dat,lib,tf,varargin{:});
             obj.Hfac = {};
             obj.H = [];
-            obj.biasfac = {};
-            obj.bias = [];
             obj.biasG = [];
+            obj.exactbias = exactbias;
             obj.statcorrect = statcorrect;
         end
     end
@@ -98,7 +102,7 @@ classdef wendy_model < wsindy_model
 
         function biasGs = get_biasG(obj,varargin)
             p = inputParser;
-            addParameter(p,'exact_bias',true);
+            addParameter(p,'exact_bias',obj.exactbias);
             addParameter(p,'S',[]);
             parse(p,varargin{:})
             S = p.Results.S;
@@ -132,7 +136,7 @@ classdef wendy_model < wsindy_model
                         end 
                     end
                 else
-                    disp('computing exact bias')
+                    fprintf('\ncomputing exact bias')
                     for i=1:obj.ntraj
                         sigs = obj.dat(i).estimate_sigma;
                         lib_ext = arrayfun(@(j)library(),1:obj.numeq);
@@ -175,7 +179,7 @@ classdef wendy_model < wsindy_model
                 obj.get_cov(w);
             else
                 obj.weights = w;
-                obj.get_features;
+                % obj.get_features;
             end
         end
 

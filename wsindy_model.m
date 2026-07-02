@@ -585,21 +585,29 @@ classdef wsindy_model < handle
         end
 
         % performance metrics
-        function res = res(obj,meth)
-            if ~exist('meth','var')
-                if ~isempty(obj.weights)
+        function res = res(obj,varargin)
+
+            
+            p = inputParser;
+            addParameter(p,'meth','sepcomp');
+            addParameter(p,'w',obj.reshape_w);
+            parse(p,varargin{:})
+            
+            meth = p.Results.meth;
+            w = p.Results.w;
+
+            if isempty(meth)
+                if ~isempty(w)
                     % res = cat(1,obj.b{:}) - cat(1,obj.G{:})*obj.weights;
-                    res = (cell2mat(obj.b) - blkdiag(obj.G{:})*obj.weights);
+                    res = (cell2mat(obj.b) - blkdiag(obj.G{:})*cell2mat(w(:)));
                 else
                     res = [];
                 end
             elseif isequal(meth,'sepcomp')
                 res = cell(length(obj.b),1);
-                if ~isempty(obj.weights)
-                    s = obj.get_supp;
-                    p = obj.get_params;
+                if ~isempty(w)
                     for j=1:length(obj.b)
-                        res{j} = (obj.b{j}-obj.G{j}(:,s{j})*p{j})/norm(obj.b{j});
+                        res{j} = (obj.b{j}-obj.G{j}*w{j})/norm(obj.b{j});
                     end
                 end
             end                

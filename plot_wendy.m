@@ -16,7 +16,7 @@ fprintf('\n')
 %%% wendy iterates
 subplot(3,2,1)
 semilogy(1:length(errs),errs,'bo-')
-legend({'err(wsindyJac)'},'location','best')
+legend({'err(WENDy)'},'location','best')
 ylabel('||w-w^*||_2/||w^*||_2')
 title(['err(1)=',num2str(errs(1)),'; ',...
     'err(end)=',num2str(errs(end))])

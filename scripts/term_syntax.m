@@ -1,4 +1,7 @@
 %%% how to construct a variety of terms
+
+lib = library();
+
 %% function composition
 t1 = term('ftag',[1 0 3]);
 disp(t1.get_str)
@@ -9,8 +12,19 @@ disp(t2.get_str)
 t3 = compterm(t2,t1);
 disp(t3.get_str)
 
+N = 1000;
+t = linspace(0,2*pi,N);
+X = sin(t'*randi(10,1,3));
+U = wsindy_data(X,t);
+
+Y = t3.evalterm(U);
+
+plot(Y)
+
 %% vector function composition: 1 layer
-t1 = library('tags',{[1 2 0 3],[0 1 1 0],[0 0 1 -1]});
+%%% currently can't pass gradient through compvec
+
+t1 = library('tags',{[1 2 0 3],[0 1 1 0],[0 0 1 1]});
 cellfun(@(t)disp(t.get_str),t1.terms)
 
 t2 = term('fHandle',@(x,y,z)exp(-x.^2-y.^2).*z);
@@ -19,28 +33,29 @@ disp(t2.get_str)
 t3 = compvec(t2,t1);
 
 N = 1000;
-X = sin(linspace(0,2*pi,N)'*randi(10,1,4));
-Y = t3.evalterm(X);
+t = linspace(0,2*pi,N);
+X = sin(t'*randi(10,1,4));
+U = wsindy_data(X,t);
+
+Y = t3.evalterm(U);
 
 plot(Y)
 
 %% vector function composition: 2 layers
-t1 = library('tags',{[1 2 0 3],[0 1 1 0],[0 0 1 -1]});
-cellfun(@(t)disp(t.get_str),t1.terms)
+%%% currently can't pass gradient through compvec
 
+t1 = library('tags',{[1 2 0 3],[0 1 1 0],[0 0 1 1]});
+cellfun(@(t)disp(t.get_str),t1.terms)
 t2 = library('tags',{[1 1 0],[0 1 1]});
 cellfun(@(t)disp(t.get_str),t2.terms)
-
 t3 = library('terms',cellfun(@(t)compvec(t,t1),t2.terms,'un',0));
-
 t4 = term('fHandle',@(x,y)exp(-x.^2-y.^2));
-
 t5 = compvec(t4,t3);
 
 N = 1000;
-X = sin(linspace(0,2*pi,N)'*randi(10,1,4));
-Y = t5.evalterm(X);
-
+t = linspace(0,2*pi,N);
+U = wsindy_data(X,t);
+Y = t5.evalterm(U);
 plot(Y)
 
 %% vector function composition: 2 layers - single input

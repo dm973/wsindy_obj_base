@@ -4,6 +4,9 @@
 % OLS with constraints
 % OLS with constraints and bias
 % WENDy with constraints and bias
+% MSTLS 
+% MSTLS with constraints
+% MSTLS with constraints and bias
 
 %% boiler plate
 
@@ -11,6 +14,17 @@
 scriptsdir = fileparts(matlab.desktop.editor.getActiveFilename);
 repodir = fileparts(scriptsdir);
 addpath(genpath(repodir));
+
+%%% restart with same rng seed or clear workspace and start from scratch
+restart_run = false;
+if ~restart_run
+    rng('shuffle')
+    close all; 
+    clear;
+end
+
+%%% consolidate figures
+set(0,'DefaultFigureWindowStyle','docked')
 
 %% load data
 
@@ -34,17 +48,17 @@ end
 Uobj = wsindy_data(U_exact,xs);
 
 %%% coarsen spacetime grid
-subsample = -54;
+subsample = 2;
 Uobj.coarsen(subsample);
 
 %%% add noise
-noise_ratio = 1.0;
+noise_ratio = 0.5;
 Uobj.addnoise(noise_ratio);
 
 %%% set testfcn 
-phifun = 'pp'; tau = 1e-8; tauhat = 3; maxdiffs = 2;
+phifun = 'pp'; tau = 1e-8; tauhat = 2; maxdiffs = 5;
 tf_param = {[tau tauhat maxdiffs]};
-tf_args = {'phifuns',phifun,'meth','FFT','param',tf_param,'subinds',-2};
+tf_args = {'phifuns',phifun,'meth','FFT','param',tf_param,'subinds',-3};
 tf = testfcn(Uobj,tf_args{:});
 
 %%% scale data
@@ -72,7 +86,7 @@ WS = WS_opt().ols(WS);
 
 %%% display model
 print_model(WS,true_nz_weights)
-Uobj.plotDyn
+% Uobj.plotDyn
 
 %% OLS with constraints
 disp('-------------------OLS with constraints-------------------')
@@ -95,7 +109,7 @@ WS = WS_opt().ols(WS, 'linregargs', linregargs);
 %%% display model
 print_model(WS,true_nz_weights)
 
-%% OLS with constraints and bias
+%% OLS with constraints and bias correction
 disp('-------------------OLS with constraints and bias correction-------------------')
 
 %%% define libary
@@ -115,8 +129,8 @@ WS = WS_opt().ols(WS, 'linregargs', linregargs);
 %%% display model
 print_model(WS,true_nz_weights)
 
-%% WENDy with constraints and bias correct
-disp('-------------------WENDy with constraints and bias correct-------------------')
+%% WENDy with constraints and bias correction
+disp('-------------------WENDy with constraints and bias correction-------------------')
 
 %%% define libary
 lib = true_lib(Uobj.nstates,true_nz_weights);
@@ -142,23 +156,19 @@ plot_wendy;
 disp('-------------------MSTLS-------------------')
 
 %%% define libary
-x_diffs = [1];%%% differential operators
-polys = [1:4]; trigs = [];%%% poly/trig functions
-custom_add = {}; custom_remove_f = {@(t)max(t([1,3]))>1, @(t)max(t)>3, @(t)and(t(1),t(3)) }; custom_remove_t = [];
+x_diffs = 0:4;%%% differential operators
+polys = 0:4; trigs = [];%%% poly/trig functions
+custom_add = {}; custom_remove_f = {}; custom_remove_t = [];
 lib = get_lib(Uobj,polys,trigs,x_diffs, custom_add, custom_remove_f, custom_remove_t);
 
 %%% define wsindy_model
 WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
 
 %%% get coefficients
-[WS,loss_wsindy] = WS_opt().MSTLS_0(WS,'lambdas', 10.^linspace(-4,0,100), 'toggle_jointthresh', 4);
-
-% WS = WS_opt().ols(WS);
+[WS,loss_wsindy] = WS_opt().MSTLS_0(WS,'lambdas', 10.^linspace(-4,0,50), 'toggle_jointthresh', 4);
 
 %%% display model
 print_model(WS,true_nz_weights)
-
-cond(WS.Gs{1}{1})
 
 %%% plot MSTLS loss
 if ~isempty(loss_wsindy)
@@ -177,8 +187,8 @@ end
 disp('-------------------MSTLS with constraints -------------------')
 
 %%% define libary
-x_diffs = [0:2];%%% differential operators
-polys = [0:4]; trigs = [];%%% poly/trig functions
+x_diffs = 0:4;%%% differential operators
+polys = 0:4; trigs = [];%%% poly/trig functions
 custom_add = {}; custom_remove_f = {}; custom_remove_t = [];
 lib = get_lib(Uobj,polys,trigs,x_diffs, custom_add, custom_remove_f, custom_remove_t);
 
@@ -191,7 +201,7 @@ minimum_viscosity = 0.0001;
 linregargs =  cellfun(@(A,b) {'Aineq', A, 'bineq', b, 'verbose', 'None'}, Ai_cell, bi_cell, 'un', 0 );
 
 %%% get coefficients
-[WS,loss_wsindy] = WS_opt().MSTLS_0(WS, 'linregargs', linregargs);
+[WS,loss_wsindy] = WS_opt().MSTLS_0(WS, 'linregargs', linregargs, 'lambdas', 10.^linspace(-3,0,80));
 
 %%% display model
 print_model(WS,true_nz_weights)
@@ -209,47 +219,94 @@ if ~isempty(loss_wsindy)
     legend;
 end
 
-%% MSTLS with bias correct
+%% MSTLS with bias correction
 %%%%%%%%%%%%% currently needs to work through MSTLS_WENDy
-disp('-------------------MSTLS with bias correct-------------------')
+disp('-------------------MSTLS with bias correction-------------------')
 
 %%% define libary
-x_diffs = [0:2];%%% differential operators
-polys = [0:4]; trigs = [];%%% poly/trig functions
+x_diffs = 0:5; %%% differential operators
+polys = 0:5; trigs = [];%%% poly/trig functions
 custom_add = {}; custom_remove_f = {}; custom_remove_t = [];
 lib = get_lib(Uobj,polys,trigs,x_diffs, custom_add, custom_remove_f, custom_remove_t);
 
 %%% define wsindy_model
-WS = wendy_model(Uobj,lib,tf,[0,1],'lhsterms',lhs);
+WS = wendy_model(Uobj,lib,tf,[0,1],'lhsterms',lhs,'catm','blkdiag','exactbias','false');
 
 %%% get coefficients
-WS = WS_opt().MSTLS_WENDy(WS);
+[WS,loss_wsindy,lambda,w_its,res,res_0,CovW,RT] = WS_opt().MSTLS_WENDy(WS,...
+    'lambdas', 10.^linspace(-4,0,50), 'verbose', 1, 'maxits_wendy', 0);
+
+%%% run wendy on resulting system
+WS.statcorrect = [1,1];
+[WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,'maxits', 50, 'verbose',1);
+
+%%% plot MSTLS loss
+if ~isempty(loss_wsindy)
+    figure(2);clf;
+    f = min(loss_wsindy(1,:));
+    g = min(loss_wsindy(2,loss_wsindy(1,:)==f));
+    for j=1:size(loss_wsindy,1)-1
+        loglog(loss_wsindy(end,:),loss_wsindy(j,:),'o-',g,f,'rx')
+        hold on
+    end
+    hold off
+    legend;
+end
 
 %%% display model
+w_true = inject_true_weights(WS,true_nz_weights);
 print_model(WS,true_nz_weights)
+w_plot = WS.weights;
+plot_wendy;
 
-%% MSTLS with constraints
-disp('-------------------WENDy with constraints and bias correct-------------------')
+%% MSTLS with constraints and bias correction
+disp('-------------------MSTLS with constraints -------------------')
 
 %%% define libary
-x_diffs = [0:2];%%% differential operators
+x_diffs = [0:4];%%% differential operators
 polys = [0:4]; trigs = [];%%% poly/trig functions
 custom_add = {}; custom_remove_f = {}; custom_remove_t = [];
 lib = get_lib(Uobj,polys,trigs,x_diffs, custom_add, custom_remove_f, custom_remove_t);
 
 %%% define wsindy_model
-WS = wendy_model(Uobj,lib,tf,[1,1],'lhsterms',lhs);
+WS = wsindy_model(Uobj,lib,tf,'lhsterms',lhs);
 
 %%% define linear constraints
 minimum_viscosity = 0.0001;
 [Ai_cell,bi_cell] = stable_diffusion_constraints(WS,minimum_viscosity);
-linregargs ={};  cellfun(@(A,b) {'Aineq', A, 'bineq', b, 'verbose', 'None'}, Ai_cell, bi_cell, 'un', 0 );
+linregargs =  cellfun(@(A,b) {'Aineq', A, 'bineq', b, 'verbose', 'None'}, Ai_cell, bi_cell, 'un', 0 );
+
+%%% define wsindy_model
+WS = wendy_model(Uobj,lib,tf,[0,1],'lhsterms',lhs,'catm','blkdiag','exactbias','false');
 
 %%% get coefficients
-WS = WS_opt().MSTLS_0(WS, 'linregargs', linregargs);
+[WS,loss_wsindy,lambda,w_its,res,res_0,CovW,RT] = WS_opt().MSTLS_WENDy(WS,...
+    'lambdas', 10.^linspace(-4,0,50), 'verbose', 1, 'maxits_wendy', 0, 'linregargs', linregargs);
+
+%%% run wendy on resulting system
+WS.statcorrect = [1,1];
+[WS,w_its,res,res_0,CovW,RT] = WS_opt().wendy(WS,'maxits', 50, 'verbose',1);
 
 %%% display model
+w_true = inject_true_weights(WS,true_nz_weights);
 print_model(WS,true_nz_weights)
+w_plot = WS.weights;
+figure(4)
+plot_wendy;
+
+%%% plot MSTLS loss
+if ~isempty(loss_wsindy)
+    figure(2);clf;
+    f = min(loss_wsindy(1,:));
+    g = min(loss_wsindy(2,loss_wsindy(1,:)==f));
+    for j=1:size(loss_wsindy,1)-1
+        loglog(loss_wsindy(end,:),loss_wsindy(j,:),'o-',g,f,'rx')
+        hold on
+    end
+    hold off
+    legend;
+end
+
 
 function lib = get_lib(Uobj,polys,trigs,x_diffs,custom_add,custom_remove_f,custom_remove_t)    
     nstates = Uobj.nstates;
@@ -277,6 +334,7 @@ end
 function print_model(WS,true_nz_weights)
 
     Str_mod = WS.disp_mod;
+    fprintf('\n')
     for j=1:WS.numeq
         fprintf('----------Eq %i----------\n',j)
         fprintf('%s=\n',WS.lhsterms{j}.get_str)

@@ -84,15 +84,19 @@ classdef diffOp < linearOp
             end
 
             for j=1:length(obj.Dmats)
-                if obj.difftags(j)~=0
-                    if isvector(Y)
-                        Y = obj.Dmats{j}*Y;
-                    else
-                        shift = 1:length(obj.Dmats);
-                        shift([1 j]) = [j 1];
-                        Y = permute(Y,shift);
-                        Y = pagemtimes(full(obj.Dmats{j}),Y);
-                        Y = permute(Y,shift);
+                if isnan(obj.difftags)
+                    Y = Y*0;
+                else
+                    if obj.difftags(j)~=0
+                        if isvector(Y)
+                            Y = obj.Dmats{j}*Y;
+                        else
+                            shift = 1:length(obj.Dmats);
+                            shift([1 j]) = [j 1];
+                            Y = permute(Y,shift);
+                            Y = pagemtimes(full(obj.Dmats{j}),Y);
+                            Y = permute(Y,shift);
+                        end
                     end
                 end
             end

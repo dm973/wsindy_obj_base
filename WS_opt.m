@@ -21,7 +21,7 @@ classdef WS_opt < handle
             WS = obj.meth(WS);
         end
 
-        function WS = ols(obj,WS,varargin)
+        function [WS,G] = ols(obj,WS,varargin)
             %%% solves the ordinary least-squares problem with linear constraints:
             %%% min_w  ||G*w-b||^2 s.t. A*w <= a, C*w = c, supp(w) = S;  A,a,C,c specified in linregargs
             %%% S: cell array of vectors defining the sparsity pattern for each equation
@@ -149,7 +149,7 @@ classdef WS_opt < handle
             addParameter(p,'alpha',[]);
             addParameter(p,'gamma',0);
             addParameter(p,'M_diag',default_M_diag);
-            addParameter(p,'toggle_jointthresh',2);
+            addParameter(p,'toggle_jointthresh',1);
             addParameter(p,'linregargs',{});
             addParameter(p,'incl_inds',cell(WS.numeq,1));
             addParameter(p,'coltrim',0);
@@ -666,11 +666,19 @@ classdef WS_opt < handle
                 tstart=tic;
             end
 
+            if isempty(linregargs)
+                linregargs = arrayfun(@(g) {}, (1:WS.numeq)', 'un', 0);
+            end
+
+            if length(linregargs) == WS.numeq
+                linregargs  = obj.lra_to_blkdiag(linregargs);
+            end
+
             if ~isempty(w)
                 if isequal(w,0)
                     WS = obj.ols(WS,'S',0,'linregargs',linregargs);                    
                 else
-                    WS.add_weights(w,'toggle_cov',1);
+                    WS.add_weights(w,'toggle_cov',WS.statcorrect(1));
                 end
             else
                 WS = obj.ols(WS,'linregargs',linregargs);
@@ -689,18 +697,8 @@ classdef WS_opt < handle
             WS.cat_Gb('cat','blkdiag');
             WS.dat.estimate_sigma;
 
-            if isempty(linregargs)
-                linregargs = cellfun(@(g) {}, WS.G, 'un', 0);
-            end
-
-            if length(linregargs) == WS.numeq
-                linregargs  = obj.lra_to_blkdiag(linregargs);
-            end
-
             G_0 = WS.G{1};
             b_0 = WS.b{1};
-            G = G_0/mean(sqrt(cell2mat(WS.dat.sigmas)));
-            b = b_0/mean(sqrt(cell2mat(WS.dat.sigmas)));
             res_0 = G_0*w_its-b_0;
             res = res_0;
 
@@ -713,7 +711,7 @@ classdef WS_opt < handle
                 if isequal(regmeth,'ols')
                     [G,b,RT] = WS.apply_cov(G_0(:,sparse_inds),b_0,obj.diag_reg,sparse_inds);
                     w = obj.linreg(G,b,linregargs{1}{:},'S',sparse_inds);
-                    WS.add_weights(w,'toggle_cov',1);
+                    WS.add_weights(w,'toggle_cov',WS.statcorrect(1));
                 elseif isequal(regmeth,'MSTLS')
                     [WS,~,~,G,b] = obj.MSTLS(WS,'applycov',1);
                     G = blkdiag(G{:}); b = cell2mat(b);
@@ -874,7 +872,7 @@ classdef WS_opt < handle
             default_alpha = 0.01;
 
             default_maxits_wendy = 20;
-            default_ittol = 10^-6;
+            default_ittol = 10^-4;
             default_diag_reg = 10^-6;
 
             p = inputParser;
@@ -902,52 +900,71 @@ classdef WS_opt < handle
             alpha = (p.Results.alpha*mean(arrayfun(@(L)length(L.terms),WS.lib))+1)^-1;
             lambdas = p.Results.lambdas;
             M_diag =  p.Results.M_diag;
-            linregargs = p.Results.linregargs;
             
-            cov_thresh = p.Results.cov_thresh;
+            linregargs = p.Results.linregargs;
+            if isempty(linregargs)
+                linregargs = arrayfun(@(g) {}, (1:WS.numeq)', 'un', 0);
+            end
 
+            if and(length(linregargs) == WS.numeq, isequal(WS.catm, 'blkdiag') )
+                linregargs  = obj.lra_to_blkdiag(linregargs);
+            end
+
+            [WS, G_0] = obj.ols(WS,'linregargs',linregargs);
+            G_0 = G_0{1};
+            b_0 = WS.b{1};
+            W_ls = WS.weights;
+
+            cov_thresh = p.Results.cov_thresh;
             maxits_wendy = p.Results.maxits_wendy;
             ittol = p.Results.ittol;
             diag_reg = p.Results.diag_reg;
             verbosity = p.Results.verbose;
-
             if maxits_wendy>0
                 vw = {'maxits',maxits_wendy,'ittol',ittol,'diag_reg',diag_reg,'verbose',verbosity,'linregargs',linregargs};
             else
                 vw = {'maxits',maxits_wendy,'ittol',ittol,'diag_reg',diag_reg,'verbose',verbosity,'w',0,'linregargs',linregargs};
             end
-            if isempty(WS.G)
-                WS.cat_Gb('cat','blkdiag');
-            end
-            G_0 = WS.G{1};
-            b_0 = WS.b{1};
-            W_ls = obj.linreg(G_0,b_0,linregargs{:});
+
+            % if isempty(WS.G)
+            %     WS.cat_Gb('cat','blkdiag');
+            % end
+
+            % G_0 = WS.G{1};
+            % W_ls = obj.linreg(G_0,b_0,linregargs{:});
             bnds = norm(b_0)./vecnorm(G_0)';
             GW_ls = norm(G_0*W_ls);
-            WS.add_weights(W_ls,'toggle_cov',1);
+            WS.add_weights(W_ls,'toggle_cov',WS.statcorrect(1));
             
             proj_cost = []; overfit_cost = []; lossvals = [];
             
             Wmat = zeros(length(W_ls),length(lambdas));
             for l=1:length(lambdas)
+                if verbosity
+                    fprintf("\nRunning MSTLS-inner with lambda=%g",lambdas(l))
+                end
                 WS.weights = W_ls;
                 [WS,its] = obj.sparsifyDynamics_wendy(WS,lambdas(l),M_diag,bnds,maxits,cov_thresh,vw);
                 proj_cost = [proj_cost alpha*norm(G_0*(WS.weights-W_ls))/GW_ls];
                 overfit_cost = [overfit_cost (1-alpha)*length(find(WS.weights))/length(W_ls)];
                 lossvals = [lossvals proj_cost(end) + overfit_cost(end)];
                 Wmat(:,l) = WS.weights;
+                if verbosity
+                    fprintf("\nMSTLS-inner ran for %g iterations",its)
+                end
             end
             l = find(lossvals == min(lossvals),1);  
             lambda = lambdas(l);
             if any(Wmat(:,l)~=0)
-                WS.weights = obj.linreg(G_0(:,Wmat(:,l)~=0),b_0,linregargs{:},'S',Wmat(:,l)~=0);
+                WS = obj.ols(WS,'linregargs',linregargs,'S',{Wmat(:,l)~=0});
+                % WS.weights = obj.linreg(G_0(:,Wmat(:,l)~=0),b_0,linregargs{:},'S',Wmat(:,l)~=0);
             else
                 WS.weights = Wmat(:,l);
             end
 
             [WS,w_its,res,res_0,CovW,RT] = obj.wendy(WS,vw{:});
 
-            WS.add_weights(WS.weights.*M_diag,'toggle_cov',1);
+            WS.add_weights(WS.weights.*M_diag,'toggle_cov',WS.statcorrect(1));
             loss_wsindy = zeros(2,length(lambdas));
             loss_wsindy(1,:) = lossvals;
             loss_wsindy(end,:) = lambdas;
@@ -1743,7 +1760,7 @@ classdef WS_opt < handle
                     smallinds = smallinds_new;
                     w = WS.weights;
                     w(smallinds) = 0;
-                    WS.add_weights(w,'toggle_cov',1);
+                    WS.add_weights(w,'toggle_cov',WS.statcorrect(1));
                     if any(w)
                         [WS,~,~,~,C] = obj.wendy(WS,vw{:});
                         w = WS.weights;
@@ -1751,7 +1768,7 @@ classdef WS_opt < handle
                         if ~isempty(inds)
                             I = abs(w(inds)) < sqrt(diag(C))*cov_thresh;
                             w(inds(I)) = 0;
-                            WS.add_weights(w,'toggle_cov',1);
+                            WS.add_weights(w,'toggle_cov',WS.statcorrect(1));
                         end
                     end
                 end

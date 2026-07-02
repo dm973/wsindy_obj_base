@@ -27,6 +27,7 @@ classdef testfcn < handle
         pre_conv
         Kmax
         norml
+        pdeg
     end
 
     methods
@@ -121,6 +122,8 @@ classdef testfcn < handle
                 end
             end
 
+            obj.pdeg = [];
+
             if p.Results.toggle_config
                 obj.config(dat);
             end
@@ -197,7 +200,7 @@ classdef testfcn < handle
                             mt = get_tf_support(obj.phifuns{i},dat.dims(i),obj.param(i),dat.ks(obj.stateind,i));
                         else
                             [obj.phifuns{i},mt,p] = obj.get_phi_handle(dat.ks(obj.stateind,i),dat.dims(i),obj.phifuns{i},obj.param{i});
-                            obj.param{i} = [obj.param{i},p];
+                            obj.pdeg = [obj.pdeg,p];
                         end
                     elseif isequal(obj.meth,'timefrac')
                         mt = floor(length(dat.grid{i})*obj.param(i));
@@ -210,6 +213,9 @@ classdef testfcn < handle
                     mt = min(max(obj.mtmin(i),mt),obj.mtmax(i));
                 end
                 obj.rads(i) = mt;
+                if isequal(functions(obj.phifuns{i}).function,'@(x)x==0')
+                    obj.rads(i) = obj.rads(i)+1;
+                end
             end
             if obj.avg
                 obj.rads = obj.rads*0 + floor(mean(obj.rads));
@@ -298,8 +304,8 @@ classdef testfcn < handle
         end
 
         function Cfs = phi_weights(obj,k,diffs)
-            xf = linspace(-1,1,2*obj.rads(k)+1);
             if ~isequal(functions(obj.phifuns{k}).function,'@(x)x==0')
+                xf = linspace(-1,1,2*obj.rads(k)+1);
                 if obj.rads(k)>0
                     x = xf(2:end-1);
                 else
@@ -319,7 +325,12 @@ classdef testfcn < handle
                         end
                     end
                 end
+                if obj.rads(k)>=1
+                    Cfs = Cfs.*(obj.rads(k)*obj.dv(k)).^(-diffs(:))*obj.dv(k);
+                end
+
             else
+                xf = linspace(-1,1,2*obj.rads(k)-1);
                 if obj.rads(k)>=1
                     fdcoeffs = fdcoeffF(max(diffs),0,xf);
                     Cfs = fdcoeffs(:,diffs+1)'.*(-1).^diffs';
@@ -330,9 +341,11 @@ classdef testfcn < handle
                     Cfs = ones(max(diffs)+1,1);
                     Cfs = Cfs(diffs+1);
                 end
-            end
-            if obj.rads(k)>=1
-                Cfs = Cfs.*(obj.rads(k)*obj.dv(k)).^(-diffs(:))*obj.dv(k);
+
+                if obj.rads(k)>=1
+                    Cfs = Cfs.*((obj.rads(k)-1)*obj.dv(k)).^(-diffs(:))*obj.dv(k);
+                end
+
             end
         end
 

@@ -162,10 +162,10 @@ classdef library < handle
 
         function Theta = evalterms(obj,dat,S)
             if ~exist('S','var')
-                S = true(1,length(obj.terms));
+                S = true(1, length(obj.terms));
             end
-            Theta = cellfun(@(tm) tm.evalterm(dat),obj.terms(S),'uni',0);
-            Theta = cat(dat.ndims+1,Theta{:});
+            Theta = cellfun( @(tm) tm.evalterm(dat) , obj.terms(S), 'uni', 0);
+            Theta = cat( dat.ndims + 1 , Theta{:} );
         end
 
         function obj = remove_terms(obj,ndims,varargin)
@@ -174,8 +174,6 @@ classdef library < handle
             addParameter(p,'difftag',[]);
             addParameter(p,'ftag_difftag',{});
             parse(p,varargin{:})
-
-
 
             ftag = p.Results.ftag;
             difftag = p.Results.difftag;
@@ -209,7 +207,6 @@ classdef library < handle
             obj.terms = obj.terms(~remove_inds);
             obj.tags = obj.tags(~remove_inds);            
         end
-
 
         function Theta_grad = evalGradterms(obj,dat,S)
             if ~exist('S','var')

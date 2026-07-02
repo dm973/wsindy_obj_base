@@ -31,11 +31,8 @@ classdef term < absterm
             elseif ~isempty(obj.fHandle)
                 obj = obj.set_fHandle;
             end
-
             obj.set_linOp(obj.linOp);
-
         end
-
     end
 
     methods

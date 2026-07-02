@@ -267,24 +267,25 @@ classdef wsindy_data < handle
 
         function plotPhase(obj,varargin)
 
-            default_ax = gca;
-            default_noisy = 1;
-            default_coord = reshape(1:obj.nstates,2,[]);
             p = inputParser;
-            addParameter(p,'ax',default_ax);
-            addParameter(p,'coord',default_coord);
-            addParameter(p,'noisy',default_noisy);
+            addParameter(p,'ax',gca);
+            addParameter(p,'coords',1:2);
+            addParameter(p,'noisy',1);
             parse(p,varargin{:})
         
-            for j=1:size(p.Results.coord,2)
-                if or(p.Results.noisy,isempty(obj.noise))
-                    plot(p.Results.ax,obj.Uobs{p.Results.coord(1,j)},obj.Uobs{p.Results.coord(2,j)},'markersize',5,'linewidth',2)
-                else
-                    plot(p.Results.ax,obj.Uobs{p.Results.coord(1,j)}-obj.noise{p.Results.coord(1,j),1},obj.Uobs{p.Results.coord(2,j)}-obj.noise{p.Results.coord(2,j),1},'markersize',5,'linewidth',2)
-                end
-                hold on
+            if and(~p.Results.noisy,~isempty(obj.noise))
+                dat = cellfun(@(U,N) U-N, obj.Uobs(p.Results.coords), obj.noise(p.Results.coords,1)', 'un',0);
+            else
+                dat = obj.Uobs(p.Results.coords);
             end
-            hold off
+
+            if length(p.Results.coords)==2
+                plot(p.Results.ax,dat{:},'markersize',5,'linewidth',2);
+            elseif length(p.Results.coords)==3
+                plot3(p.Results.ax,dat{:},'markersize',5,'linewidth',2);
+            else 
+                fprintf("\nError: can't phaseplot in more than 3 dimensions.")
+            end
         end
 
         function sig = estimate_sigma(obj,varargin)
@@ -406,6 +407,12 @@ classdef wsindy_data < handle
                 end
             end
 
+            if ~isempty(obj.scales)
+                if ~all(obj.scales==1)
+                    x0 = x0.*obj.scales(1:obj.nstates);
+                end
+            end
+
         end
 
         function [Ufft,xx] = get_fft(obj,stateind,dim)
@@ -444,17 +451,22 @@ classdef wsindy_data < handle
         end
 
         function obj = plotFFTtf(obj,tf,startfig)
+            obj.getcorners();
             for j=1:obj.nstates
                 for i=1:obj.ndims
                     figure(startfig+1+(j-1)*obj.ndims+i-1)
                     [Ufft,xx] = obj.get_fft(j,i);
                     NN = length(xx);
                     k = obj.ks(j,i);
-                    Ufft = Ufft/max(Ufft);
+                    [L1,L2]=build_lines(Ufft,xx,k);
+                    scl = max(Ufft);
+                    Ufft = Ufft/scl;
                     tf_dat = abs(tf{min(end,j)}.Cfsfft{i}(1,1:NN));
                     tf_dat = tf_dat/max(tf_dat);
-                    semilogy(0:NN-1,Ufft,'k-',0:NN-1,tf_dat,'r-',k,Ufft(k),'gd','markersize',10)
-                    legend({'Ufft','tf','k'})
+                    semilogy(0:NN-1,Ufft,'k-',0:NN-1,tf_dat,'r-',k,Ufft(k),'gd',0:k-1,L1/scl,'b--',k-1:NN-1,L2/scl,'b--','markersize',10)
+                    legend({'Ufft','tf','k','L1','L2'})
+                    title(sprintf('stateind=%i, dim=%i',j,i))
+                    hold on;
                 end
             end     
         end
@@ -489,18 +501,23 @@ classdef wsindy_data < handle
                 scales = scl;
             elseif ~isequal(scl,1)
                 try            
+
+                    betad = max(cell2mat(arrayfun(@(L) max(cell2mat(L.tags(:)),[],1), lib(:), 'un',0)),[],1);
+                    betad = betad(1:obj.nstates);
+                    scales_u = arrayfun(@(b,i) min(max(norm(obj.Uobs{i}(:)/norm(obj.Uobs{i}(:),2)^(1/b),2*b)^(b/max(b-1,1)),eps),1/eps^2), betad,1:obj.nstates);
+                    
                     if isequal(class(tf),'testfcn')
                         tf = {tf};
                     end
-                    pd = max(cell2mat(cellfun(@(ttf) cellfun(@(p) p(end),ttf.param),tf(:),'un',0)),[],1);
-                    md = max(cell2mat(cellfun(@(ttf) ttf.rads(:)',tf(:),'un',0)),[],1);
-                    dx = obj.dv(:)';
-                    betad = max(cell2mat(arrayfun(@(L) max(cell2mat(L.tags(:)),[],1), lib(:), 'un',0)),[],1);
-                    betad = betad(1:obj.nstates);
-                    ad = max(cell2mat(arrayfun(@(L) max(cell2mat(cellfun(@(tt)tt.linOp.difftags,L.terms(:),'un',0)),[],1), lib(:), 'un',0)),[],1);
-                    scales_u = arrayfun(@(b,i) min(max(norm(obj.Uobs{i}(:)/norm(obj.Uobs{i}(:),2)^(1/b),2*b)^(b/max(b-1,1)),eps),1/eps^2), betad,1:obj.nstates);
-                    scales_x = arrayfun(@(p,m,d,a) (prod(p-(0:floor(a/2)-1))/prod(1:ceil(a/2))*prod(1:a))^(1/a) / (m*d),pd,md,dx,ad);
-
+                    if all(cellfun(@(tff)~isempty(tff.pdeg),tf))
+                        pd = max(cell2mat(cellfun(@(ttf) ttf.pdeg ,tf(:),'un',0)),[],1);
+                        md = max(cell2mat(cellfun(@(ttf) ttf.rads(:)',tf(:),'un',0)),[],1);
+                        dx = obj.dv(:)';
+                        ad = max(cell2mat(arrayfun(@(L) max(cell2mat(cellfun(@(tt)tt.linOp.difftags,L.terms(:),'un',0)),[],1), lib(:), 'un',0)),[],1);
+                        scales_x = arrayfun(@(p,m,d,a) (prod(p-(0:floor(a/2)-1))/prod(1:ceil(a/2))*prod(1:a))^(1/a) / (m*d),pd,md,dx,ad);
+                    else
+                        scales_x = ones(1,obj.ndims);
+                    end
                     scales = [scales_u,1./scales_x];
                     disp('choosing JCP scaling')
                 catch

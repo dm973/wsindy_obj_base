@@ -35,7 +35,7 @@ Uobj.addnoise(noise_ratio,'seed',rng_seed,'uniform',0);
 %%% test function params
 tf_type = 'Cinf'; % 'pp'
 rad_type = 'FFT'; % 'FFT','direct','timefrac'
-toggle_SVD_tf = 1;
+toggle_SVD_tf = 0;
 toggle_strong_form = 0;
 subinds = -3; % subsample convolution for speed
 
@@ -43,7 +43,7 @@ subinds = -3; % subsample convolution for speed
 toggle_cov_1st_order = 1; % boolean to include linear covariance correction
 toggle_cov_2nd_order = 0.5; % noise ratio above which quadratic covariance correction applied 
 toggle_include_bias_correction = 1; % include iterative bias correction
-wendy_params = {'maxits',100,'ittol',10^-4,'diag_reg',10^-inf,'trim_rows',1};
+wendy_params = {'maxits',100,'ittol',10^-4,'diag_reg',10^-10,'trim_rows',1};
 
 %%% viewing params 
 toggle_compare = 1;
@@ -92,8 +92,8 @@ else
             tf_param = 15;
         end
     end
-    tf = cellfun(@(ls)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
-        'meth',rad_type,'param',tf_param,'stateind',find(ls.ftag)),lhs,'uni',0);
+    tf = arrayfun(@(i)testfcn(Uobj,'phifuns',phifun,'subinds',subinds,...
+        'meth',rad_type,'param',tf_param,'stateind',i),1:Uobj.nstates,'uni',0);
 end
 fprintf('\ntf rads=');fprintf('%u ',tf{1}.rads);fprintf('\n')
 
