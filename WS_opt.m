@@ -1580,6 +1580,10 @@ classdef WS_opt < handle
                 % threshold only on term projection
                 LBs = lambda*bnds2;
                 UBs = 1/lambda*bnds2;
+            elseif toggle_jointthresh == 5
+                % threshold only based on coefficient
+                LBs = lambda + bnds*0;
+                UBs = bnds*0 + inf;
             else
                 % threshold only Hamiltonian coarse-graining - should be
                 % robust to small coefficients
@@ -1669,28 +1673,6 @@ classdef WS_opt < handle
 
                 % get term-specific thresholds
                 [LBs, UBs, thrs_EL] = obj.get_coeff_threshold_bnds(G,b,M,lambda,toggle_jointthresh);
-                % if toggle_jointthresh == 1
-                %     % threshold based on JCP paper
-                %     bnds = norm(b)./vecnorm(G)'.*M;
-                %     LBs = lambda*max(1,bnds);
-                %     UBs = 1/lambda*min(1,bnds);
-                % elseif toggle_jointthresh == 2
-                %     % threshold only on term magnitude
-                %     bnds = norm(b)./vecnorm(G)'.*M;
-                %     LBs = lambda*bnds;
-                %     UBs = 1/lambda*bnds;
-                % elseif toggle_jointthresh == 3
-                %     % threshold based on JCP but with term projection
-                %     bnds = norm(b)^2./abs(b'*G)'.*M;
-                %     bnds2 = norm(b)./vecnorm(G)'.*M;
-                %     UBs = 1/lambda*bnds2; % upper bound by term magnitude
-                %     LBs = lambda*bnds; % lower bound by projection
-                % elseif toggle_jointthresh == 4
-                %     % threshold only on term projection
-                %     bnds = norm(b)^2./abs(b'*G)'.*M;
-                %     LBs = lambda*bnds;
-                %     UBs = 1/lambda*bnds;
-                % end
                 ws = [ws w];
                 Gs{p} = G;
                 bs{p} = b;

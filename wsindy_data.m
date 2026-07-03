@@ -516,7 +516,7 @@ classdef wsindy_data < handle
                         ad = max(cell2mat(arrayfun(@(L) max(cell2mat(cellfun(@(tt)tt.linOp.difftags,L.terms(:),'un',0)),[],1), lib(:), 'un',0)),[],1);
                         scales_x = arrayfun(@(p,m,d,a) (prod(p-(0:floor(a/2)-1))/prod(1:ceil(a/2))*prod(1:a))^(1/a) / (m*d),pd,md,dx,ad);
                     else
-                        scales_x = ones(1,obj.ndims);
+                        scales_x = cellfun(@(x)1/mean(abs(x(:))),obj.grid);
                     end
                     scales = [scales_u,1./scales_x];
                     disp('choosing JCP scaling')

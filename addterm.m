@@ -48,7 +48,7 @@ classdef addterm < term
             obj.t1.get_grads;
             obj.t2.get_grads;
             for j=1:obj.nstates
-                obj.gradterms(j) = addterm(obj.t1.gradterms(j),obj.t2.gradterms(j),'gradon',0);
+                obj.gradterms(j) = addterm(obj.t1.gradterms(j),obj.t2.gradterms(j),'gradon',0,'linOp',obj.linOp);
             end
         end
 

@@ -606,6 +606,9 @@ classdef wsindy_model < handle
             elseif isequal(meth,'sepcomp')
                 res = cell(length(obj.b),1);
                 if ~isempty(w)
+                    if length(w)>length(obj.G)
+                        w = {cell2mat(w(:))};
+                    end
                     for j=1:length(obj.b)
                         res{j} = (obj.b{j}-obj.G{j}*w{j})/norm(obj.b{j});
                     end

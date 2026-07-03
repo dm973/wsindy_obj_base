@@ -28,7 +28,7 @@ set(0,'DefaultFigureWindowStyle','docked')
 
 %% load data
 
-pde_num = 4; % set to 0 to run on workspace U_exact, xs, lhs variables
+pde_num = 3; % set to 0 to run on workspace U_exact, xs, lhs variables
 
 dr = 'pde_data/';
 pde_names = {'burgers.mat',...
@@ -52,7 +52,7 @@ subsample = 2;
 Uobj.coarsen(subsample);
 
 %%% add noise
-noise_ratio = 0.5;
+noise_ratio = 1.0;
 Uobj.addnoise(noise_ratio);
 
 %%% set testfcn 
@@ -86,7 +86,6 @@ WS = WS_opt().ols(WS);
 
 %%% display model
 print_model(WS,true_nz_weights)
-% Uobj.plotDyn
 
 %% OLS with constraints
 disp('-------------------OLS with constraints-------------------')
@@ -128,6 +127,24 @@ WS = WS_opt().ols(WS, 'linregargs', linregargs);
 
 %%% display model
 print_model(WS,true_nz_weights)
+
+%% WENDy with bias correction
+disp('-------------------WENDy with bias correction-------------------')
+
+%%% define libary
+lib = true_lib(Uobj.nstates,true_nz_weights);
+
+%%% define wsindy_model
+WS = wendy_model(Uobj,lib,tf,[1,1],'lhsterms',lhs);
+
+%%% get coefficients
+[WS,w_its,res,res_0,CovW] = WS_opt().wendy(WS,'verbose',1, 'ittol', 1e-4);
+
+%%% display model
+print_model(WS,true_nz_weights)
+w_true = cell2mat(cellfun(@(t)t(:,end),true_nz_weights(:),'un',0));
+w_plot = WS.weights;
+plot_wendy;
 
 %% WENDy with constraints and bias correction
 disp('-------------------WENDy with constraints and bias correction-------------------')
@@ -224,8 +241,8 @@ end
 disp('-------------------MSTLS with bias correction-------------------')
 
 %%% define libary
-x_diffs = 0:5; %%% differential operators
-polys = 0:5; trigs = [];%%% poly/trig functions
+x_diffs = 0:4; %%% differential operators
+polys = 0:4; trigs = [];%%% poly/trig functions
 custom_add = {}; custom_remove_f = {}; custom_remove_t = [];
 lib = get_lib(Uobj,polys,trigs,x_diffs, custom_add, custom_remove_f, custom_remove_t);
 
